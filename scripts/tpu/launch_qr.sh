@@ -41,7 +41,10 @@ GCS_DATA_URI="${GCS_DATA_URI:-gs://llm-architectures-eu/nanogptjax/data/fineweb1
 # Training knobs consumed by nanogpt/config.py env overrides. The default is a
 # SMOKE run (50 steps); raise TOTAL_TRAIN_STEPS for the full baseline.
 TOTAL_TRAIN_STEPS="${TOTAL_TRAIN_STEPS:-50}"
-PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-}"   # empty = config default (32)
+# v6e-8 has 31 GiB HBM/chip; the config default (32) is sized for 80 GiB GPUs and
+# OOMs a v6e chip (needs ~115 GiB). 4 is verified-safe (~14 GiB, ~0.98 s/step) and
+# the desired token batch is preserved via gradient accumulation. Raise carefully.
+PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
 SAVE_CKPT_DIR="${SAVE_CKPT_DIR:-}"                    # empty = don't save (smoke)
 
 STARTUP_SCRIPT="$SCRIPT_DIR/startup_script.sh"

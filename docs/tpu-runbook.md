@@ -65,7 +65,10 @@ TRC_PROFILE=v6e-8-eu bash scripts/tpu/launch_spot.sh
 - **Spot preemption**: a preempt reboots the host; `startup_script.sh` re-runs idempotently and
   relaunches (the `.staged` marker avoids re-downloading data). No auto-resume of training state
   yet — checkpoints exist via Orbax but resume-on-preempt is a follow-up before long runs.
-- **HBM / OOM**: if `train.py` OOMs, lower `PER_DEVICE_BATCH_SIZE` (default 32).
+- **HBM / OOM**: v6e has 31 GiB/chip; nanoGPT's config default (`per_device_batch_size=32`) is
+  sized for 80 GiB GPUs and OOMs a v6e chip (~115 GiB needed). `launch_qr.sh` defaults it to
+  **4** (verified: ~14 GiB, ~0.98 s/step, ~532K tok/s on v6e-8). The desired token batch is
+  preserved via gradient accumulation. Raise carefully.
 - **TRC is a free grant** — never stop/delete/reprovision a slice without explicit intent.
 
 ## TRC allocation facts (reference)
