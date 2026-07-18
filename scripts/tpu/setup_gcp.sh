@@ -49,8 +49,13 @@ fi
 # ---- 3. IAM ----
 # On a fresh project the TPU service agent is not auto-created just by enabling
 # the API; ask for it explicitly (idempotent).
-echo "==> ensuring TPU service identity exists"
-gcloud beta services identity create --service=tpu.googleapis.com --project="$PROJECT_ID" >/dev/null
+echo "==> ensuring TPU service identity exists (best-effort)"
+# `services identity create` lives under `gcloud beta`; on a fresh SDK that
+# component may be absent. It only needs to run once per project to materialize
+# the agent, so tolerate failure (already-exists / beta-unavailable) and proceed.
+gcloud beta services identity create --service=tpu.googleapis.com \
+    --project="$PROJECT_ID" --quiet >/dev/null 2>&1 \
+    || echo "    (skipped — TPU service agent already exists or beta unavailable)"
 
 PROJECT_NUM="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 TPU_SA="service-${PROJECT_NUM}@cloud-tpu.iam.gserviceaccount.com"
