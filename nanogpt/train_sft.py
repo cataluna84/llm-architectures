@@ -43,7 +43,12 @@ from utils import logical_to_sharding
 from checkpoint_utils import load_weights_from_checkpoint_with_validation
 from config import ShardingRules, Config, BATCH_AXIS_NAME
 from sft_dataloader import make_grain_shard_loader, build_tokenizer
-from wandb_logger import load_dotenv, init_wandb
+from wandb_logger import (
+    load_dotenv,
+    init_wandb,
+    device_peak_flops,
+    transformer_flops_per_token,
+)
 
 
 logging.getLogger("absl").setLevel(logging.ERROR)
@@ -288,6 +293,12 @@ def main():
         },
     )
 
+    # Constants for MFU: FLOPs/token (dense + attention) and total device peak.
+    flops_per_token = transformer_flops_per_token(
+        num_params, cfg.model.num_layers, cfg.model.d_emb, seqlen
+    )
+    peak_flops_total = device_peak_flops() * len(devices)
+
     best_loss = float("inf")
     last_val_loss = float("inf")
     es_patience = cfg.hparams.es_patience
@@ -297,6 +308,7 @@ def main():
     total_tokens_consumed = 0
     # Train-only wall clock (excludes eval/logging) for the leaderboard summary.
     total_train_step_time = 0.0
+    steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
 
     step = cfg.ckpt_cfg.resume_from_step
     print("Starting training (the first step will take some time for compilation...)\n")
@@ -328,9 +340,15 @@ def main():
         tokens_processed = bsz * seqlen * grad_accum_steps
         total_tokens_consumed += tokens_processed
         total_train_step_time += dt
+        steps_this_run += 1
         tokens_per_sec = int(tokens_processed / dt)
+        # MFU = achieved FLOPs/s over device peak. ETA uses the average step time
+        # so far (the compile-heavy first step washes out within a few steps).
+        mfu = flops_per_token * tokens_per_sec / peak_flops_total
+        avg_step_time = total_train_step_time / steps_this_run
+        eta_minutes = max(total_train_steps - step, 0) * avg_step_time / 60.0
 
-        print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")  # fmt: off
+        print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens/s: {tokens_per_sec:>9,} | MFU: {mfu * 100:4.1f}% | ETA: {eta_minutes:6.1f} min")  # fmt: off
 
         if (step % cfg.wandb.log_interval) == 0:
             run.log(
@@ -339,8 +357,10 @@ def main():
                     "train/lr": float(lr_fn(step)),
                     "perf/tokens_per_sec": tokens_per_sec,
                     "perf/step_time_s": dt,
+                    "perf/mfu": mfu,
                     "perf/total_tokens": total_tokens_consumed,
                     "time/train_minutes": train_time_elapsed,
+                    "time/eta_minutes": eta_minutes,
                 },
                 step=step,
             )

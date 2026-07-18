@@ -47,6 +47,35 @@ def load_dotenv(path: str = ".env") -> None:
         return
 
 
+def device_peak_flops(default: float = 918e12) -> float:
+    """Per-device bf16 peak FLOP/s used to normalize MFU.
+
+    Defaults to ~918 TFLOP/s, the Cloud TPU v6e (Trillium) bf16 peak. Override
+    with `NANOGPT_DEVICE_PEAK_FLOPS` for other hardware (e.g. an H100 SXM is
+    ~989e12 bf16 without sparsity).
+    """
+    val = os.environ.get("NANOGPT_DEVICE_PEAK_FLOPS")
+    if not val:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        return default
+
+
+def transformer_flops_per_token(
+    num_params: int, num_layers: int, d_model: int, seqlen: int
+) -> float:
+    """Approx train (fwd+bwd) FLOPs per token, Karpathy `estimate_mfu` style.
+
+    `6 * N` is the dense matmul term; `12 * L * d_model * seqlen` adds the
+    attention score/value matmuls (which scale with context length). `N` is the
+    total parameter count, matching the `total_training_flops` run-summary
+    convention so MFU and that summary stay consistent.
+    """
+    return 6 * num_params + 12 * num_layers * d_model * seqlen
+
+
 class _NoOpRun:
     """Null-object run: same interface as `WandbRun`, does nothing."""
 

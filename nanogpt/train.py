@@ -47,7 +47,12 @@ from model import GPT, forward
 from utils import logical_to_sharding
 from optim import build_optimizer
 from config import ShardingRules, Config, BATCH_AXIS_NAME
-from wandb_logger import load_dotenv, init_wandb
+from wandb_logger import (
+    load_dotenv,
+    init_wandb,
+    device_peak_flops,
+    transformer_flops_per_token,
+)
 
 from fineweb_dataloader import make_grain_shard_loader, BOSFinder
 # from custom_loss import chunked_softmax_cross_entropy_with_integer_labels
@@ -318,6 +323,12 @@ def main():
         },
     )
 
+    # Constants for MFU: FLOPs/token (dense + attention) and total device peak.
+    flops_per_token = transformer_flops_per_token(
+        num_params, cfg.model.num_layers, cfg.model.d_emb, seqlen
+    )
+    peak_flops_total = device_peak_flops() * len(devices)
+
     # Checkpointing
     ckpt_path = Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
     options = ocp.CheckpointManagerOptions(
@@ -371,6 +382,7 @@ def main():
     # Sum of per-step train times only (excludes validation/logging), i.e. the
     # nanochat-leaderboard "total_training_time" convention.
     total_train_step_time = 0.0
+    steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
 
     simple_batch = np.zeros((bsz, seqlen + 1), dtype=np.uint16)
     grad_accum_batch = np.zeros((grad_accum_steps, bsz, seqlen + 1), dtype=np.uint16)
@@ -477,9 +489,18 @@ def main():
                     tokens_processed = bsz * seqlen * grad_accum_steps
                     total_tokens_consumed += tokens_processed
                     total_train_step_time += dt
+                    steps_this_run += 1
                     tokens_per_sec = int(tokens_processed / dt)
+                    # MFU = achieved FLOPs/s over device peak. ETA uses the
+                    # average step time so far (the compile-heavy first step
+                    # washes out within a handful of steps).
+                    mfu = flops_per_token * tokens_per_sec / peak_flops_total
+                    avg_step_time = total_train_step_time / steps_this_run
+                    eta_minutes = (
+                        max(total_train_steps - step - 1, 0) * avg_step_time / 60.0
+                    )  # noqa: E501
                     # fmt: off
-                    print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")
+                    print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens/s: {tokens_per_sec:>9,} | MFU: {mfu * 100:4.1f}% | ETA: {eta_minutes:6.1f} min")
                     # fmt: on
 
                     if (step % cfg.wandb.log_interval) == 0:
@@ -489,8 +510,10 @@ def main():
                                 "train/lr": float(lr_fn(step)),
                                 "perf/tokens_per_sec": tokens_per_sec,
                                 "perf/step_time_s": dt,
+                                "perf/mfu": mfu,
                                 "perf/total_tokens": total_tokens_consumed,
                                 "time/train_minutes": train_time_elapsed,
+                                "time/eta_minutes": eta_minutes,
                             },
                             step=step,
                         )
