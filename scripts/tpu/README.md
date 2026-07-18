@@ -12,6 +12,7 @@ Current path: **v6e-8 spot in `europe-west4-a`** for the baseline smoke/eval. Se
 | `launch_qr.sh` | workstation | submit a Queued Resource (accel/zone/metadata) that boots `startup_script.sh` |
 | `launch_spot.sh` | workstation | `TRC_PROFILE` wrapper around `launch_qr.sh` with `SPOT=1` (`v6e-8-eu`, `v6e-16-eu`) |
 | `startup_script.sh` | TPU host at boot | install uv, clone the repo branch, `uv sync --extra jaxtpu`, stage FineWeb, run `nanogpt/train.py` in tmux |
+| `deploy_tarball.sh` | workstation | tar the **working tree incl. `.env`** → GCS → VM pull/extract → `uv sync` → stage data → relaunch train in tmux. Preferred deploy for runs needing W&B (clone can't ship `.env`) and for uncommitted changes |
 | `ops.sh` | workstation | `status`, `tail-logs`, `attach`, `ssh`, `pull-ckpt`, `delete` |
 | `_lib.sh` | sourced | dotenv loader (`shell env > .env > defaults`) |
 
@@ -32,6 +33,9 @@ with `VAR=value bash ...`.
 | `TOTAL_TRAIN_STEPS` | `50` (smoke) | startup → `NANOGPT_TOTAL_TRAIN_STEPS` |
 | `PER_DEVICE_BATCH_SIZE` | config default (32) | startup → `NANOGPT_PER_DEVICE_BATCH_SIZE` (OOM fallback) |
 | `SAVE_CKPT_DIR` | unset (no save) | startup → `NANOGPT_SAVE_CKPT_DIR` (may be `gs://...`) |
+| `NANOGPT_VAL_MAX_BATCHES` | `200` | deploy_tarball → val-pass cap (0 = full val set) |
+| `NANOGPT_RESUME_FROM_STEP` | `0` | deploy_tarball → resume from a saved step after spot preemption |
+| `WANDB_RUN_NAME` / `WANDB_RUN_ID` | unset | deploy_tarball → W&B run identity (fixed ID resumes the same dashboard run) |
 
 ## Typical flow
 
