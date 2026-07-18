@@ -1,23 +1,26 @@
 import os
+
 # GPU-specific NCCL/XLA flags. Skipped on TPU (startup_script.sh sets
 # NANOGPT_TPU=1) since these --xla_gpu_* / NCCL knobs don't apply there.
 if os.environ.get("NANOGPT_TPU") != "1":
     os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
     os.environ["NCCL_NVLS_ENABLE"] = "1"
-    os.environ.update({
-        "NCCL_LL128_BUFFSIZE": "-2",
-        "NCCL_LL_BUFFSIZE": "-2",
-        "NCCL_PROTO": "SIMPLE,LL,LL128",
-    })
-    os.environ['XLA_FLAGS'] = (
-        '--xla_gpu_triton_gemm_any=True '
-        '--xla_gpu_enable_latency_hiding_scheduler=true '
-        '--xla_gpu_enable_pipelined_all_reduce=true '
-        '--xla_gpu_enable_pipelined_all_gather=true '
-        '--xla_gpu_enable_pipelined_reduce_scatter=true '
-        '--xla_gpu_enable_while_loop_double_buffering=true '
-        '--xla_gpu_enable_pipelined_p2p=true '
-        '--xla_gpu_collective_permute_decomposer_threshold=1024 '
+    os.environ.update(
+        {
+            "NCCL_LL128_BUFFSIZE": "-2",
+            "NCCL_LL_BUFFSIZE": "-2",
+            "NCCL_PROTO": "SIMPLE,LL,LL128",
+        }
+    )
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_triton_gemm_any=True "
+        "--xla_gpu_enable_latency_hiding_scheduler=true "
+        "--xla_gpu_enable_pipelined_all_reduce=true "
+        "--xla_gpu_enable_pipelined_all_gather=true "
+        "--xla_gpu_enable_pipelined_reduce_scatter=true "
+        "--xla_gpu_enable_while_loop_double_buffering=true "
+        "--xla_gpu_enable_pipelined_p2p=true "
+        "--xla_gpu_collective_permute_decomposer_threshold=1024 "
     )
 import warnings
 import logging
@@ -26,6 +29,7 @@ from pathlib import Path
 from functools import partial
 
 import jax
+
 jax.config.update("jax_optimization_level", "O1")
 
 import optax
@@ -43,6 +47,7 @@ from model import GPT, forward
 from utils import logical_to_sharding
 from optim import build_optimizer
 from config import ShardingRules, Config, BATCH_AXIS_NAME
+from wandb_logger import load_dotenv, init_wandb
 
 from fineweb_dataloader import make_grain_shard_loader, BOSFinder
 # from custom_loss import chunked_softmax_cross_entropy_with_integer_labels
@@ -188,8 +193,11 @@ def model_run_name(cfg):
     )
 
 
-
 def main():
+    # Seed os.environ from .env (WANDB_*, etc.) before building the config,
+    # which reads those values at construction time.
+    load_dotenv()
+
     # Get the mesh, sharding rules, amd the config
     devices = np.array(jax.devices())
     print("Number of devices found:", len(devices))
@@ -230,29 +238,31 @@ def main():
     print("Model built successfully!")
 
     # Optimizer
+    tx, lr_schedules = build_optimizer(
+        model,
+        d_model=cfg.model.d_emb,
+        other_peak_lr=max_lr,
+        other_min_lr=min_lr,
+        total_train_steps=total_train_steps,
+        warmup_steps=warmup_steps,
+        b1=cfg.hparams.b1,
+        b2=cfg.hparams.b2,
+        embedding_lr=cfg.hparams.embedding_lr,
+        weight_decay=cfg.hparams.weight_decay,
+        cautious_weight_decay=cfg.hparams.cautious_weight_decay,
+    )
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
-        build_optimizer(
-            model,
-            d_model=cfg.model.d_emb,
-            other_peak_lr=max_lr,
-            other_min_lr=min_lr,
-            total_train_steps=total_train_steps,
-            warmup_steps=warmup_steps,
-            b1=cfg.hparams.b1,
-            b2=cfg.hparams.b2,
-            embedding_lr=cfg.hparams.embedding_lr,
-            weight_decay=cfg.hparams.weight_decay,
-            cautious_weight_decay=cfg.hparams.cautious_weight_decay,
-        ),
+        tx,
     )
+    # Schedule for the main (Muon "other") param group — logged as train/lr.
+    lr_fn = lr_schedules["other"]
 
     if grad_accum_steps > 1:
         print("Using `MultiSteps` in optax for gradient accumulation...")
         optim = optax.MultiSteps(optim, every_k_schedule=grad_accum_steps)
 
     optim_state = optim.init(model)
-
 
     print("")
     print("-" * 75)
@@ -279,6 +289,34 @@ def main():
     print(line("Weight decay", cfg.hparams.weight_decay), "\n")
     print("-" * 75)
 
+    num_params = count_params(model)
+    run = init_wandb(
+        cfg,
+        model_run_name(cfg),
+        {
+            "attn_type": cfg.model.attn_type,
+            "window_pattern": cfg.model.window_pattern,
+            "num_layers": cfg.model.num_layers,
+            "d_emb": cfg.model.d_emb,
+            "q_heads": cfg.model.q_heads,
+            "kv_heads": cfg.model.kv_heads,
+            "head_dim": head_dim,
+            "seqlen": seqlen,
+            "vocab_size": cfg.model.vocab_size,
+            "num_params": num_params,
+            "per_device_batch_size": per_device_bsz,
+            "total_batch_size": bsz,
+            "grad_accum_steps": grad_accum_steps,
+            "desired_batch_size": desired_batch_size,
+            "max_lr": max_lr,
+            "min_lr": min_lr,
+            "warmup_steps": warmup_steps,
+            "weight_decay": cfg.hparams.weight_decay,
+            "total_train_steps": total_train_steps,
+            "num_devices": len(devices),
+            "stage": "pretrain",
+        },
+    )
 
     # Checkpointing
     ckpt_path = Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
@@ -319,7 +357,9 @@ def main():
             )
         else:
             resume_from_step = 0
-            print(f"Checkpoint path {resume_ckpt_path} not found! Resuming training without restoring checkpoint...")
+            print(
+                f"Checkpoint path {resume_ckpt_path} not found! Resuming training without restoring checkpoint..."
+            )
 
     best_loss = float("inf")
     last_val_loss = float("inf")
@@ -328,6 +368,9 @@ def main():
     best_step = 0
     num_shards_used = 0
     total_tokens_consumed = 0
+    # Sum of per-step train times only (excludes validation/logging), i.e. the
+    # nanochat-leaderboard "total_training_time" convention.
+    total_train_step_time = 0.0
 
     simple_batch = np.zeros((bsz, seqlen + 1), dtype=np.uint16)
     grad_accum_batch = np.zeros((grad_accum_steps, bsz, seqlen + 1), dtype=np.uint16)
@@ -433,10 +476,24 @@ def main():
                     train_time_elapsed = (end - train_start_time) / 60  # in minutes
                     tokens_processed = bsz * seqlen * grad_accum_steps
                     total_tokens_consumed += tokens_processed
+                    total_train_step_time += dt
                     tokens_per_sec = int(tokens_processed / dt)
                     # fmt: off
                     print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")
                     # fmt: on
+
+                    if (step % cfg.wandb.log_interval) == 0:
+                        run.log(
+                            {
+                                "train/loss": float(loss),
+                                "train/lr": float(lr_fn(step)),
+                                "perf/tokens_per_sec": tokens_per_sec,
+                                "perf/step_time_s": dt,
+                                "perf/total_tokens": total_tokens_consumed,
+                                "time/train_minutes": train_time_elapsed,
+                            },
+                            step=step,
+                        )
 
                     step += 1
 
@@ -515,6 +572,15 @@ def main():
                     else:
                         es_patience_counter += 1
 
+                    run.log(
+                        {
+                            "val/loss": avg_val_loss,
+                            "val/best_loss": best_loss,
+                            "val/best_step": best_step,
+                        },
+                        step=step,
+                    )
+
                     if es_patience_counter > es_patience:
                         # fmt: off
                         print(f"\nEarly stopping triggered! No improvement for {es_patience_counter} steps.")
@@ -533,6 +599,22 @@ def main():
             tokens.unlink_on_del()
     train_end_time = time.time()
     print(f"\nTotal time taken to train the model: {(train_end_time - train_start_time)/60:.2f} minutes")  # fmt: off
+
+    # Leaderboard-shaped run summary (nanochat "Time-to-GPT-2" convention).
+    # total_training_time is the train-only wall clock (excludes eval/logging);
+    # total_training_flops uses the standard 6*N*D (params * tokens) approximation.
+    # Full CORE / val_bpb require the tasks/ eval harness (out of scope here);
+    # best_val_loss (nats/token) is the in-loop quality proxy.
+    run.summary(
+        total_training_time=total_train_step_time,
+        total_training_flops=6 * num_params * total_tokens_consumed,
+        step=step,
+        best_val_loss=best_loss,
+        best_step=best_step,
+        total_tokens=total_tokens_consumed,
+        num_shards=num_shards_used,
+    )
+    run.finish()
 
 
 if __name__ == "__main__":

@@ -135,6 +135,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Weights & Biases local run artifacts
+wandb/
+
 # Environments
 .env
 .envrc

@@ -16,7 +16,8 @@ dependencies = [
     "ruff>=0.15.22",
     "rich>=15.0.0",
     "grain==0.2.18",
-    "tqdm==4.69.0"
+    "tqdm==4.69.0",
+    "wandb==0.28.1",
 ]
 
 [project.optional-dependencies]

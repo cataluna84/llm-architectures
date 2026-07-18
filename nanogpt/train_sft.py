@@ -43,6 +43,7 @@ from utils import logical_to_sharding
 from checkpoint_utils import load_weights_from_checkpoint_with_validation
 from config import ShardingRules, Config, BATCH_AXIS_NAME
 from sft_dataloader import make_grain_shard_loader, build_tokenizer
+from wandb_logger import load_dotenv, init_wandb
 
 
 logging.getLogger("absl").setLevel(logging.ERROR)
@@ -150,6 +151,10 @@ def model_run_name(cfg):
 
 
 def main():
+    # Seed os.environ from .env (WANDB_*, etc.) before building the config,
+    # which reads those values at construction time.
+    load_dotenv()
+
     # Get the mesh, sharding rules, amd the config
     devices = np.array(jax.devices())
     print("Number of devices found:", len(devices))
@@ -207,12 +212,17 @@ def main():
     )
     print("Weights loaded from the checkpoint successfully!")
 
-    # Optimizer
+    # Optimizer (constant LR for SFT)
+    sft_lr = 1e-4
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
-        optax.adamw(learning_rate=1e-4),
+        optax.adamw(learning_rate=sft_lr),
     )
     optim_state = optim.init(model)
+
+    # Constant schedule mirror so wandb `train/lr` matches the pretrain interface.
+    def lr_fn(_step):
+        return sft_lr
 
     #  Checkpointing
     options = ocp.CheckpointManagerOptions(
@@ -253,6 +263,31 @@ def main():
     print(line("Weight decay", cfg.hparams.weight_decay), "\n")
     print("-" * 75)
 
+    num_params = count_params(model)
+    run = init_wandb(
+        cfg,
+        model_run_name(cfg),
+        {
+            "attn_type": cfg.model.attn_type,
+            "window_pattern": cfg.model.window_pattern,
+            "num_layers": cfg.model.num_layers,
+            "d_emb": cfg.model.d_emb,
+            "q_heads": cfg.model.q_heads,
+            "kv_heads": cfg.model.kv_heads,
+            "head_dim": head_dim,
+            "seqlen": seqlen,
+            "vocab_size": cfg.model.vocab_size,
+            "num_params": num_params,
+            "per_device_batch_size": per_device_bsz,
+            "total_batch_size": bsz,
+            "grad_accum_steps": grad_accum_steps,
+            "lr": sft_lr,
+            "total_train_steps": total_train_steps,
+            "num_devices": len(devices),
+            "stage": "sft",
+        },
+    )
+
     best_loss = float("inf")
     last_val_loss = float("inf")
     es_patience = cfg.hparams.es_patience
@@ -260,6 +295,8 @@ def main():
     best_step = 0
     num_shards_used = 0
     total_tokens_consumed = 0
+    # Train-only wall clock (excludes eval/logging) for the leaderboard summary.
+    total_train_step_time = 0.0
 
     step = cfg.ckpt_cfg.resume_from_step
     print("Starting training (the first step will take some time for compilation...)\n")
@@ -290,9 +327,23 @@ def main():
         step += 1
         tokens_processed = bsz * seqlen * grad_accum_steps
         total_tokens_consumed += tokens_processed
+        total_train_step_time += dt
         tokens_per_sec = int(tokens_processed / dt)
 
         print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")  # fmt: off
+
+        if (step % cfg.wandb.log_interval) == 0:
+            run.log(
+                {
+                    "train/loss": float(loss),
+                    "train/lr": float(lr_fn(step)),
+                    "perf/tokens_per_sec": tokens_per_sec,
+                    "perf/step_time_s": dt,
+                    "perf/total_tokens": total_tokens_consumed,
+                    "time/train_minutes": train_time_elapsed,
+                },
+                step=step,
+            )
 
         if (step % options.save_interval_steps) == 0:
             mngr.save(
@@ -331,6 +382,15 @@ def main():
             else:
                 es_patience_counter += 1
 
+            run.log(
+                {
+                    "val/loss": avg_val_loss,
+                    "val/best_loss": best_loss,
+                    "val/best_step": best_step,
+                },
+                step=step,
+            )
+
             if es_patience_counter > es_patience:
                 # fmt: off
                 print(f"\nEarly stopping triggered! No improvement for {es_patience_counter} steps.")
@@ -359,6 +419,18 @@ def main():
     print(
         f"\nTotal time taken to train the model: {(train_end_time - train_start_time) / 60:.2f} minutes"
     )
+
+    # Leaderboard-shaped run summary (see train.py for the convention).
+    run.summary(
+        total_training_time=total_train_step_time,
+        total_training_flops=6 * num_params * total_tokens_consumed,
+        step=step,
+        best_val_loss=best_loss,
+        best_step=best_step,
+        total_tokens=total_tokens_consumed,
+        num_shards=num_shards_used,
+    )
+    run.finish()
 
 
 if __name__ == "__main__":

@@ -20,6 +20,13 @@ def _env_int(name: str, default: int) -> int:
     return int(val) if val else default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.environ.get(name)
+    if not val:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 AxisName = str | tuple[str, ...] | None
 Axes = tuple[AxisName, ...]
 
@@ -278,6 +285,42 @@ class CheckpointConfig:
 
 
 @dataclasses.dataclass
+class WandbConfig:
+    """Weights & Biases logging config, sourced from the environment/.env.
+
+    `enabled=False`, `mode="disabled"`, or a missing `WANDB_API_KEY` (in online
+    mode) all make `init_wandb` return a silent no-op run.
+    """
+
+    enabled: bool = dataclasses.field(
+        default_factory=lambda: _env_bool("WANDB_ENABLED", True)
+    )
+    project: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_PROJECT", "llm-architectures")
+    )
+    entity: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_ENTITY", "")
+    )
+    # "online" (default), "offline" (local-only), or "disabled".
+    mode: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_MODE", "online")
+    )
+    # Optional overrides. run_id + resume="allow" continues a previous run
+    # (handy when resuming from a checkpoint).
+    run_name: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_RUN_NAME", "")
+    )
+    run_id: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_RUN_ID", "")
+    )
+    dir: str = dataclasses.field(default_factory=lambda: _env_str("WANDB_DIR", ""))
+    # Log training metrics every N steps (validation always logs on its cadence).
+    log_interval: int = dataclasses.field(
+        default_factory=lambda: _env_int("WANDB_LOG_INTERVAL", 1)
+    )
+
+
+@dataclasses.dataclass
 class HyperParams:
     # Batch size related
     per_device_batch_size: int = 32
@@ -330,6 +373,7 @@ class Config:
     model: ModelConfig = dataclasses.field(default_factory=ModelConfig)
     hparams: HyperParams = dataclasses.field(default_factory=HyperParams)
     ckpt_cfg: CheckpointConfig = dataclasses.field(default_factory=CheckpointConfig)
+    wandb: WandbConfig = dataclasses.field(default_factory=WandbConfig)
     # Env: NANOGPT_DATA_DIR — absolute path to the FineWeb *.bin shards on the
     # TPU VM (the download script writes to nanogpt/fineweb10B/).
     data_dir: Path | str = dataclasses.field(

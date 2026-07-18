@@ -28,6 +28,8 @@ python nanogpt/inference.py
 
 There is no test suite and no CLI arg parsing: **all configuration lives in `nanogpt/config.py`** (`data_dir`, hparams, model size, checkpoint paths). Set `CheckpointConfig.load_params_ckpt_path` (absolute path to a checkpoint's `params/` subdir) before running inference or SFT.
 
+**Experiment tracking:** `train.py`/`train_sft.py` log to Weights & Biases via `nanogpt/wandb_logger.py` (the only module importing `wandb`). Credentials are read from a gitignored `.env` at the repo root (`WANDB_API_KEY`, `WANDB_PROJECT`, `WANDB_ENTITY`) by a dependency-free `load_dotenv()` (no `python-dotenv`), called before `Config()` is built so `WandbConfig` picks the values up. `init_wandb(...)` returns a no-op run when disabled/keyless/non-primary-host, so call sites are unconditional. Toggle with `WANDB_ENABLED=0`, `WANDB_MODE=offline|disabled`; see `WandbConfig` in `config.py` for all env knobs.
+
 Imports are flat (`from utils import ...`, `from model import ...`) — there is no installed package and no `__init__.py`. Scripts work because Python puts the script's own directory on `sys.path`, so run them as `python nanogpt/<script>.py` and keep new modules' imports flat.
 
 `nanogpt/dev/` is experimental scratch space, excluded from lint hooks.

@@ -174,4 +174,7 @@ def build_optimizer(
         param_labels,
     )
 
-    return tx
+    # Also return the per-group LR schedules so callers can log the current LR
+    # (e.g. wandb `train/lr`). `schedules["other"]` is the warmup-cosine schedule
+    # driving the main Muon group.
+    return tx, schedules

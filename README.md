@@ -82,14 +82,34 @@ uv sync --all-extras
 python nanogpt/download_fineweb_tokens.py
 ```
 
-5. Train the model
+5. (Optional) Experiment tracking with Weights & Biases
+
+Training (`train.py`) and SFT (`train_sft.py`) log to [wandb.ai](https://wandb.ai)
+out of the box. Put your credentials in a `.env` at the repo root (gitignored):
+```
+WANDB_API_KEY=...          # from https://wandb.ai/authorize
+WANDB_PROJECT=llm-architectures
+WANDB_ENTITY=<your-username-or-team>
+```
+Logged per step: `train/loss`, `train/lr`, `perf/tokens_per_sec`,
+`perf/step_time_s`; per validation: `val/loss`, `val/best_loss`; and a
+leaderboard-shaped run summary (`total_training_time`, `total_training_flops`,
+`best_val_loss`). To turn it off or run locally, set one of:
+```
+WANDB_ENABLED=0            # fully off (no-op)
+WANDB_MODE=offline         # local-only, no network (view via `wandb sync` later)
+WANDB_MODE=disabled        # off, same as WANDB_ENABLED=0
+```
+Other knobs: `WANDB_RUN_NAME`, `WANDB_RUN_ID` (resume a run), `WANDB_LOG_INTERVAL`.
+
+6. Train the model
 ```
 # Pass the data dir path in the config file located at `nanogpt/config.py`
 # Change the hparams in the file if you want.
 python nanogpt/train.py
 ```
 
-6. (Optional) Fine-tune model on conversational dataset
+7. (Optional) Fine-tune model on conversational dataset
 ```
 # Prepare the SFT dataset. Change args if you want to
 python nanogpt/sft_dataloader.py
@@ -98,7 +118,7 @@ python nanogpt/sft_dataloader.py
 python nanogpt/train_sft.py
 ```
 
-7. Run inference by providing the checkpoint path
+8. Run inference by providing the checkpoint path
 ```
 # Change this in the config file. Load the checkpoint 
 # that is appropriate for the task (pretrain results/SFT results)
