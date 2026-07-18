@@ -1,3 +1,4 @@
+import os
 import warnings
 import jax
 import jax.numpy as jnp
@@ -6,6 +7,17 @@ from pathlib import Path
 from typing import Callable, Tuple, Optional
 from jax.sharding import Mesh
 from utils import jax_pytree_struct
+
+
+def _env_str(name: str, default: str) -> str:
+    """Return env var `name` if set and non-empty, else `default`."""
+    val = os.environ.get(name)
+    return val if val else default
+
+
+def _env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    return int(val) if val else default
 
 
 AxisName = str | tuple[str, ...] | None
@@ -254,10 +266,15 @@ class CheckpointConfig:
     max_checkpoints_to_keep: int = 5
     checkpoint_save_steps: int = 100
     last_checkpoint_step: int = 0
-    # Directory where checkpoints will be saved
-    save_ckpt_dir: Path | str = ""
+    # Directory where checkpoints will be saved (env: NANOGPT_SAVE_CKPT_DIR;
+    # may be a gs:// path when running on TPU).
+    save_ckpt_dir: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_SAVE_CKPT_DIR", "")
+    )
     # Path to params subdirectory within a checkpoint from which weights will be loaded
-    load_params_ckpt_path: Path | str = ""
+    load_params_ckpt_path: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_LOAD_PARAMS_CKPT_PATH", "")
+    )
 
 
 @dataclasses.dataclass
@@ -289,6 +306,21 @@ class HyperParams:
     es_patience: int = 500
     val_interval: int = 50
 
+    def __post_init__(self):
+        # Env overrides let the TPU startup script select a smoke-sized run
+        # (e.g. NANOGPT_TOTAL_TRAIN_STEPS=50) or shrink the per-device batch on
+        # OOM without editing code. Training math is unchanged; warmup tracks
+        # total steps unless explicitly overridden.
+        self.per_device_batch_size = _env_int(
+            "NANOGPT_PER_DEVICE_BATCH_SIZE", self.per_device_batch_size
+        )
+        self.total_train_steps = _env_int(
+            "NANOGPT_TOTAL_TRAIN_STEPS", self.total_train_steps
+        )
+        self.warmup_steps = _env_int(
+            "NANOGPT_WARMUP_STEPS", int(min(300, 0.01 * self.total_train_steps))
+        )
+
 
 @jax_pytree_struct
 class Config:
@@ -298,4 +330,8 @@ class Config:
     model: ModelConfig = dataclasses.field(default_factory=ModelConfig)
     hparams: HyperParams = dataclasses.field(default_factory=HyperParams)
     ckpt_cfg: CheckpointConfig = dataclasses.field(default_factory=CheckpointConfig)
-    data_dir: Path | str = "fineweb10B/"
+    # Env: NANOGPT_DATA_DIR — absolute path to the FineWeb *.bin shards on the
+    # TPU VM (the download script writes to nanogpt/fineweb10B/).
+    data_dir: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_DATA_DIR", "fineweb10B/")
+    )

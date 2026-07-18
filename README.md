@@ -1,4 +1,16 @@
-# nanoGPTJAX
+# llm-architectures
+
+A personal research base for building scalable LLM architectures from scratch in **pure JAX** — starting from nanoGPT and expanding toward MoE and RL post-training, with a Cloud TPU (v6e) launch/ops toolchain.
+
+> **Credits & attribution.** The nanoGPT implementation in this repository is **seeded from
+> [AakashKumarNain/nanoGPTJAX](https://github.com/AakashKumarNain/nanoGPTJAX)**. This is *not* a GitHub
+> fork — the code was copied and is being extended under a different scope. Full credit for the original
+> pure-JAX nanoGPT design and implementation goes to that project and its author; the original `LICENSE`
+> and `NOTICE` are preserved. See also the upstream links in [References](#references).
+
+---
+
+## nanoGPTJAX
 
 This project is inspired by Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT) and [nanochat](https://github.com/karpathy/nanochat), with one major difference: here we build everything from scratch in **pure JAX (on both GPUs and TPUs)**, avoiding higher-level third-party model/training libraries. This is not meant to start another PyTorch vs. JAX debate—I use both on a daily basis, and both are good in their own right. There are a few reasons I keep using JAX:
 

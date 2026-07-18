@@ -1,22 +1,24 @@
 import os
-# Set some GPU FLAGS
-os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-os.environ["NCCL_NVLS_ENABLE"]="1"
-os.environ.update({
-  "NCCL_LL128_BUFFSIZE": "-2",
-  "NCCL_LL_BUFFSIZE": "-2",
-   "NCCL_PROTO": "SIMPLE,LL,LL128",
- })
-os.environ['XLA_FLAGS'] = (
-    '--xla_gpu_triton_gemm_any=True '
-    '--xla_gpu_enable_latency_hiding_scheduler=true '
-    '--xla_gpu_enable_pipelined_all_reduce=true '
-    '--xla_gpu_enable_pipelined_all_gather=true '
-    '--xla_gpu_enable_pipelined_reduce_scatter=true '
-    '--xla_gpu_enable_while_loop_double_buffering=true '
-    '--xla_gpu_enable_pipelined_p2p=true '
-    '--xla_gpu_collective_permute_decomposer_threshold=1024 '
-)
+# GPU-specific NCCL/XLA flags. Skipped on TPU (startup_script.sh sets
+# NANOGPT_TPU=1) since these --xla_gpu_* / NCCL knobs don't apply there.
+if os.environ.get("NANOGPT_TPU") != "1":
+    os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+    os.environ["NCCL_NVLS_ENABLE"] = "1"
+    os.environ.update({
+        "NCCL_LL128_BUFFSIZE": "-2",
+        "NCCL_LL_BUFFSIZE": "-2",
+        "NCCL_PROTO": "SIMPLE,LL,LL128",
+    })
+    os.environ['XLA_FLAGS'] = (
+        '--xla_gpu_triton_gemm_any=True '
+        '--xla_gpu_enable_latency_hiding_scheduler=true '
+        '--xla_gpu_enable_pipelined_all_reduce=true '
+        '--xla_gpu_enable_pipelined_all_gather=true '
+        '--xla_gpu_enable_pipelined_reduce_scatter=true '
+        '--xla_gpu_enable_while_loop_double_buffering=true '
+        '--xla_gpu_enable_pipelined_p2p=true '
+        '--xla_gpu_collective_permute_decomposer_threshold=1024 '
+    )
 import warnings
 import logging
 import time
