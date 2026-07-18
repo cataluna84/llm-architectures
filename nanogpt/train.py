@@ -37,6 +37,7 @@ import grain
 import numpy as np
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+from etils import epath
 from jax.sharding import Mesh
 from jax.sharding import set_mesh
 
@@ -329,8 +330,9 @@ def main():
     )
     peak_flops_total = device_peak_flops() * len(devices)
 
-    # Checkpointing
-    ckpt_path = Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
+    # Checkpointing. epath (an orbax dep) instead of pathlib: pathlib collapses
+    # "gs://bucket" to "gs:/bucket", breaking GCS checkpoint dirs on TPU.
+    ckpt_path = epath.Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
     options = ocp.CheckpointManagerOptions(
         max_to_keep=max_checkpoints_to_keep,
         save_interval_steps=checkpoint_save_steps,
@@ -357,15 +359,16 @@ def main():
     resume_from_step = cfg.ckpt_cfg.last_checkpoint_step
 
     if resume_from_step > 0:
-        resume_ckpt_path = os.path.join(
-            cfg.ckpt_cfg.save_ckpt_dir, str(resume_from_step)
-        )
-        if os.path.exists(resume_ckpt_path):
+        # Checkpoints live under ckpt_path (save_ckpt_dir / run_name), and
+        # epath.exists() works for both local and gs:// paths.
+        resume_ckpt_path = ckpt_path / str(resume_from_step)
+        if resume_ckpt_path.exists():
             from checkpoint_utils import load_checkpoint
 
             model, optim_state, train_iter = load_checkpoint(
                 mngr, resume_from_step, model, optim_state, mesh, train_iter
             )
+            print(f"Resumed from checkpoint at step {resume_from_step}")
         else:
             resume_from_step = 0
             print(
@@ -553,6 +556,7 @@ def main():
                     print("\nScoring model performance on validation data...\n")
                     val_loss = 0.0
                     val_steps_count = 0
+                    val_cap = cfg.hparams.val_max_batches
                     val_iter = iter(val_dl)
                     for val_shard in val_iter:
                         val_tokens = val_shard["tokens"]
@@ -564,6 +568,15 @@ def main():
                             num_val_batches = val_bf.build(bsz, seqlen)
                             if num_val_batches <= 0:
                                 continue
+                            # Cap the pass (0 = full); the BOSFinder order is
+                            # deterministic, so capped passes score the same
+                            # subset every time and stay comparable.
+                            if val_cap > 0:
+                                num_val_batches = min(
+                                    num_val_batches, val_cap - val_steps_count
+                                )
+                                if num_val_batches <= 0:
+                                    continue
 
                             for _ in range(num_val_batches):
                                 starts, ends = val_bf.next_batch(bsz, seqlen)

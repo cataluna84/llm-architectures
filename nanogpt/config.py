@@ -272,7 +272,11 @@ class CheckpointConfig:
     # Checkpoint related
     max_checkpoints_to_keep: int = 5
     checkpoint_save_steps: int = 100
-    last_checkpoint_step: int = 0
+    # Resume step for spot-preemption recovery (env: NANOGPT_RESUME_FROM_STEP).
+    # Points at a step saved under save_ckpt_dir/<run_name>/; 0 = fresh start.
+    last_checkpoint_step: int = dataclasses.field(
+        default_factory=lambda: _env_int("NANOGPT_RESUME_FROM_STEP", 0)
+    )
     # Directory where checkpoints will be saved (env: NANOGPT_SAVE_CKPT_DIR;
     # may be a gs:// path when running on TPU).
     save_ckpt_dir: Path | str = dataclasses.field(
@@ -348,6 +352,12 @@ class HyperParams:
     # Other
     es_patience: int = 500
     val_interval: int = 50
+    # Cap batches per validation pass (0 = full val set). Validation runs at
+    # every shard boundary, so an uncapped pass over the whole val shard
+    # (~1.5k batches) adds ~1min x ~53 shards to a full run. 200 batches
+    # (~13M tokens, always the same deterministic subset) keeps the metric
+    # comparable across passes at ~8s each.
+    val_max_batches: int = 200
 
     def __post_init__(self):
         # Env overrides let the TPU startup script select a smoke-sized run
@@ -363,6 +373,7 @@ class HyperParams:
         self.warmup_steps = _env_int(
             "NANOGPT_WARMUP_STEPS", int(min(300, 0.01 * self.total_train_steps))
         )
+        self.val_max_batches = _env_int("NANOGPT_VAL_MAX_BATCHES", self.val_max_batches)
 
 
 @jax_pytree_struct
