@@ -140,6 +140,13 @@ def init_wandb(cfg, run_name, config):
     import jax
 
     load_dotenv()
+    # Deploy scripts export WANDB_* unconditionally, so unset knobs arrive as
+    # empty strings. Our config treats empty as unset, but the wandb library
+    # reads these raw and chokes (e.g. WANDB_RUN_ID="" -> "Run ID cannot be
+    # empty"). Scrub empties so both layers agree.
+    for key in ("WANDB_RUN_ID", "WANDB_RUN_NAME", "WANDB_NAME", "WANDB_MODE"):
+        if key in os.environ and not os.environ[key]:
+            del os.environ[key]
     wcfg = cfg.wandb
 
     if not wcfg.enabled:

@@ -77,6 +77,13 @@ echo "==> [3/5] generating remote scripts"
 LAUNCHER="$WORK/nanogpt_train_launch.sh"
 REMOTE="$WORK/nanogpt_remote_deploy.sh"
 
+# Export WANDB_* only when set: the wandb library reads these raw from the
+# environment, and an exported empty string breaks wandb.init ("Run ID cannot
+# be empty") where our config's empty-means-unset convention would not.
+WANDB_ENV_LINES=""
+[ -n "$WANDB_RUN_NAME" ] && WANDB_ENV_LINES+="export WANDB_RUN_NAME=\"$WANDB_RUN_NAME\""$'\n'
+[ -n "$WANDB_RUN_ID" ] && WANDB_ENV_LINES+="export WANDB_RUN_ID=\"$WANDB_RUN_ID\""$'\n'
+
 # Runs INSIDE tmux on the VM. Local values are baked in at generation time;
 # escaped \$ are evaluated on the VM at runtime.
 cat > "$LAUNCHER" <<EOF
@@ -94,9 +101,7 @@ export NANOGPT_VAL_MAX_BATCHES="$NANOGPT_VAL_MAX_BATCHES"
 export NANOGPT_RESUME_FROM_STEP="$NANOGPT_RESUME_FROM_STEP"
 export NANOGPT_OTHER_PEAK_LR="$NANOGPT_OTHER_PEAK_LR"
 export NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="$NANOGPT_MUON_MOMENTUM_WARMUP_STEPS"
-export WANDB_RUN_NAME="$WANDB_RUN_NAME"
-export WANDB_RUN_ID="$WANDB_RUN_ID"
-export PYTHONUNBUFFERED=1
+${WANDB_ENV_LINES}export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
 echo "[\$(date -Is)] launching train.py steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
 "\$UV" run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log
