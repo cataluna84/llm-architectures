@@ -1,5 +1,6 @@
 # Shared bash helpers for the TPU launch scripts.
-# Sourced (not executed) by setup_gcp.sh, launch_qr.sh, launch_spot.sh, ops.sh.
+# Sourced (not executed) by setup_gcp.sh, launch_qr.sh, launch_spot.sh, ops.sh,
+# deploy_tarball.sh.
 
 # Load KEY=VALUE pairs from a dotenv-style file WITHOUT overwriting variables
 # that are already set in the environment. Skips blank / comment lines.
@@ -23,4 +24,22 @@ load_env_file() {
             fi
         fi
     done < "$file"
+}
+
+# Tar the working tree (INCLUDING the gitignored .env — that is how WANDB_*
+# credentials reach the VM; git clones can never ship it), excluding VCS,
+# venvs, staged data, and caches. $1 = output tarball path, $2 = repo root.
+make_code_tarball() {
+    local out=$1 root=$2
+    tar czf "$out" -C "$root" \
+        --exclude='.git' \
+        --exclude='.venv' \
+        --exclude='wandb' \
+        --exclude='_artifacts' \
+        --exclude='nanogpt/fineweb10B' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        --exclude='.ruff_cache' \
+        --exclude='profile-data' \
+        .
 }

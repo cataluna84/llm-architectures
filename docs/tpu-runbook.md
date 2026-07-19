@@ -27,11 +27,15 @@ bash scripts/tpu/setup_gcp.sh                          # APIs + gs://llm-archite
 TRC_PROFILE=v6e-8-eu bash scripts/tpu/launch_spot.sh   # smoke: 50 steps, 2 FineWeb shards
 ```
 
-`launch_spot.sh` → `launch_qr.sh` creates the QR with `startup_script.sh` as metadata. On boot
-the host: installs uv → clones `cataluna84/llm-architectures @ feat/nanoGPTJAX` → `uv sync
---extra jaxtpu` (JAX 0.11.0 + libtpu) → stages FineWeb10B shards → runs `nanogpt/train.py` in a
-`tmux` session teed to `/tmp/train.log`. Knobs (steps, batch, data source, checkpoint dir) are
-passed as VM metadata and consumed by `nanogpt/config.py`'s `NANOGPT_*` env overrides.
+`launch_spot.sh` → `launch_qr.sh` tars the local working tree (**including the gitignored
+`.env`**, so W&B credentials reach the VM — the reason there is no git clone anywhere in the
+flow), uploads it to `gs://<bucket>/nanogptjax/code/`, and creates the QR with
+`startup_script.sh` as metadata. On boot the host: installs uv → pulls + extracts the pinned
+code tarball → `uv sync --extra jaxtpu` (JAX 0.11.0 + libtpu) → stages FineWeb10B shards → runs
+`nanogpt/train.py` in a `tmux` session teed to `/tmp/train.log`. Knobs (steps, batch, data
+source, checkpoint dir) are passed as VM metadata and consumed by `nanogpt/config.py`'s
+`NANOGPT_*` env overrides. To redeploy onto a live VM, use `deploy_tarball.sh` (same tarball
+flow, no reprovision).
 
 ## Observe / control
 

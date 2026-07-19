@@ -63,21 +63,15 @@ TARBALL="$WORK/llm-arch-code-$STAMP.tar.gz"
 GCS_URI="gs://$BUCKET/$CODE_PREFIX/llm-arch-code-$STAMP.tar.gz"
 
 echo "==> [1/5] tarring working tree (incl. .env; excl. .git/.venv/data/wandb)"
-tar czf "$TARBALL" -C "$REPO_ROOT" \
-    --exclude='.git' \
-    --exclude='.venv' \
-    --exclude='wandb' \
-    --exclude='_artifacts' \
-    --exclude='nanogpt/fineweb10B' \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='.ruff_cache' \
-    --exclude='profile-data' \
-    .
+make_code_tarball "$TARBALL" "$REPO_ROOT"
 ls -lh "$TARBALL"
 
-echo "==> [2/5] uploading tarball to $GCS_URI"
+echo "==> [2/5] uploading tarball to $GCS_URI (+ latest.tar.gz alias)"
 gcloud storage cp "$TARBALL" "$GCS_URI" --project="$PROJECT_ID" >/dev/null
+# Stable alias: startup_script.sh boots from this when no pinned URI is set,
+# so preemption reboots pick up the most recently deployed code.
+gcloud storage cp "$GCS_URI" "gs://$BUCKET/$CODE_PREFIX/latest.tar.gz" \
+    --project="$PROJECT_ID" >/dev/null
 
 echo "==> [3/5] generating remote scripts"
 LAUNCHER="$WORK/nanogpt_train_launch.sh"

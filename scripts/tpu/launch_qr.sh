@@ -31,8 +31,13 @@ RUNTIME="${RUNTIME:-v2-alpha-tpuv6e}"
 SPOT="${SPOT:-}"
 
 # ---- what the VM deploys + runs (passed via VM metadata to startup_script.sh) ----
-REPO_URL="${REPO_URL:-https://github.com/cataluna84/llm-architectures.git}"
-REPO_BRANCH="${REPO_BRANCH:-feat/nanoGPTJAX}"
+# Code ships as a TARBALL of the local working tree (incl. the gitignored .env,
+# so WANDB_* work from the very first boot) — no git clone on the VM. The
+# tarball is built + uploaded here at submit time and its URI pinned in
+# metadata; set CODE_TARBALL_URI to reuse an already-uploaded tarball instead.
+BUCKET="${BUCKET:-llm-architectures-eu}"
+CODE_PREFIX="${CODE_PREFIX:-nanogptjax/code}"
+CODE_TARBALL_URI="${CODE_TARBALL_URI:-}"
 # Data: pull N FineWeb10B train shards from the PUBLIC HF dataset on the VM
 # (data-source=hf), or rsync a pre-staged copy from GCS (data-source=gcs).
 DATA_SOURCE="${DATA_SOURCE:-hf}"
@@ -50,13 +55,26 @@ SAVE_CKPT_DIR="${SAVE_CKPT_DIR:-}"                    # empty = don't save (smok
 STARTUP_SCRIPT="$SCRIPT_DIR/startup_script.sh"
 [ -f "$STARTUP_SCRIPT" ] || { echo "ERROR: $STARTUP_SCRIPT not found" >&2; exit 1; }
 
+if [ -z "$CODE_TARBALL_URI" ]; then
+    STAMP="$(date +%Y%m%d-%H%M%S)"
+    CODE_TARBALL_URI="gs://$BUCKET/$CODE_PREFIX/llm-arch-code-$STAMP.tar.gz"
+    TARBALL_WORK="$(mktemp -d)"
+    echo "==> tarring working tree (incl. .env) -> $CODE_TARBALL_URI"
+    make_code_tarball "$TARBALL_WORK/code.tar.gz" "$REPO_ROOT"
+    gcloud storage cp "$TARBALL_WORK/code.tar.gz" "$CODE_TARBALL_URI" \
+        --project="$PROJECT_ID" >/dev/null
+    gcloud storage cp "$CODE_TARBALL_URI" "gs://$BUCKET/$CODE_PREFIX/latest.tar.gz" \
+        --project="$PROJECT_ID" >/dev/null
+    rm -rf "$TARBALL_WORK"
+fi
+
 extra_flags=()
 tier="on-demand"
 if [ -n "$SPOT" ] && [ "$SPOT" != "0" ] && [ "$SPOT" != "false" ]; then
     extra_flags+=(--spot); tier="spot (preemptible)"
 fi
 
-metadata_pairs="repo-url=$REPO_URL,repo-branch=$REPO_BRANCH"
+metadata_pairs="code-tarball-uri=$CODE_TARBALL_URI"
 metadata_pairs+=",data-source=$DATA_SOURCE,data-shards=$DATA_SHARDS,gcs-data-uri=$GCS_DATA_URI"
 metadata_pairs+=",total-train-steps=$TOTAL_TRAIN_STEPS"
 [ -n "$PER_DEVICE_BATCH_SIZE" ] && metadata_pairs+=",per-device-batch-size=$PER_DEVICE_BATCH_SIZE"
@@ -67,7 +85,7 @@ echo "    project:      $PROJECT_ID"
 echo "    zone:         $ZONE"
 echo "    QR / node:    $QR_NAME / $NODE_ID"
 echo "    accelerator:  $ACCEL_TYPE   runtime: $RUNTIME   tier: $tier"
-echo "    repo:         $REPO_URL @ $REPO_BRANCH"
+echo "    code:         $CODE_TARBALL_URI"
 echo "    data:         source=$DATA_SOURCE shards=$DATA_SHARDS"
 echo "    train steps:  $TOTAL_TRAIN_STEPS   per-device-bsz: ${PER_DEVICE_BATCH_SIZE:-<config default>}"
 echo "    save ckpt:    ${SAVE_CKPT_DIR:-<none — smoke>}"

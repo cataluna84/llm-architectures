@@ -3,8 +3,10 @@
 # Runs as root on the QR host at boot. Idempotent: safe to re-run after a
 # spot-preemption reboot (GCP re-runs this script; it re-deploys + relaunches).
 #
-# No multi-host rendezvous, no wandb, no Secret Manager, no libpython/torch_xla
-# shim — one Python process drives all 8 chips via JAX SPMD.
+# Code arrives as a TARBALL from GCS (uploaded by launch_qr.sh /
+# deploy_tarball.sh; includes the gitignored .env, so W&B works from the first
+# boot) — no git clone. No multi-host rendezvous, no Secret Manager, no
+# libpython/torch_xla shim — one Python process drives all 8 chips via JAX SPMD.
 
 set -euo pipefail
 exec > >(tee -a /tmp/startup.log) 2>&1
@@ -20,8 +22,7 @@ read_meta() {
         2>/dev/null || echo "$default"
 }
 
-REPO_URL="$(read_meta repo-url https://github.com/cataluna84/llm-architectures.git)"
-REPO_BRANCH="$(read_meta repo-branch feat/nanoGPTJAX)"
+CODE_TARBALL_URI="$(read_meta code-tarball-uri gs://llm-architectures-eu/nanogptjax/code/latest.tar.gz)"
 REPO_DIR="${REPO_DIR:-/opt/llm-architectures}"
 DATA_SOURCE="$(read_meta data-source hf)"
 DATA_SHARDS="$(read_meta data-shards 2)"
@@ -31,7 +32,7 @@ PER_DEVICE_BATCH_SIZE="$(read_meta per-device-batch-size '')"
 SAVE_CKPT_DIR="$(read_meta save-ckpt-dir '')"
 TMUX_SESSION="${TMUX_SESSION:-train}"
 
-echo "[startup] repo=$REPO_URL @ $REPO_BRANCH  data-source=$DATA_SOURCE shards=$DATA_SHARDS"
+echo "[startup] code=$CODE_TARBALL_URI  data-source=$DATA_SOURCE shards=$DATA_SHARDS"
 echo "[startup] total-train-steps=$TOTAL_TRAIN_STEPS per-device-bsz=${PER_DEVICE_BATCH_SIZE:-<default>} save-ckpt-dir=${SAVE_CKPT_DIR:-<none>}"
 
 # ----- 1. system deps -----
@@ -52,17 +53,19 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
 "$UV" --version
 
-# ----- 3. fetch repo (public — plain git clone) -----
-sudo mkdir -p "$(dirname "$REPO_DIR")"
-if [ ! -d "$REPO_DIR/.git" ]; then
-    sudo git clone --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR"
-    sudo chown -R "$USER:$USER" "$REPO_DIR" 2>/dev/null || true
-else
-    cd "$REPO_DIR"
-    git fetch --all --prune
-    git checkout "$REPO_BRANCH"
-    git pull --ff-only
+# ----- 3. fetch code tarball from GCS (working tree incl. .env) -----
+echo "[startup] fetching code tarball $CODE_TARBALL_URI"
+sudo mkdir -p "$REPO_DIR"
+if ! gcloud storage cp "$CODE_TARBALL_URI" /tmp/llm-arch-code.tar.gz; then
+    echo "[startup] ERROR: code tarball not found at $CODE_TARBALL_URI" >&2
+    echo "[startup]        upload one via scripts/tpu/launch_qr.sh (automatic)" >&2
+    echo "[startup]        or scripts/tpu/deploy_tarball.sh" >&2
+    exit 1
 fi
+# Extract OVER the existing tree on reboots: .venv and nanogpt/fineweb10B are
+# not in the tarball, so the synced env and staged data survive.
+sudo tar xzf /tmp/llm-arch-code.tar.gz -C "$REPO_DIR"
+sudo chown -R "$USER:$USER" "$REPO_DIR" 2>/dev/null || true
 cd "$REPO_DIR"
 
 # ----- 4. python + deps via uv (TPU extra: jax[tpu]==0.11.0 + libtpu) -----

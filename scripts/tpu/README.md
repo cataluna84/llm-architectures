@@ -11,8 +11,8 @@ Current path: **v6e-8 spot in `europe-west4-a`** for the baseline smoke/eval. Se
 | `setup_gcp.sh` | workstation, once | enable APIs, create the GCS bucket, grant bucket IAM to the TPU + VM service accounts |
 | `launch_qr.sh` | workstation | submit a Queued Resource (accel/zone/metadata) that boots `startup_script.sh` |
 | `launch_spot.sh` | workstation | `TRC_PROFILE` wrapper around `launch_qr.sh` with `SPOT=1` (`v6e-8-eu`, `v6e-16-eu`) |
-| `startup_script.sh` | TPU host at boot | install uv, clone the repo branch, `uv sync --extra jaxtpu`, stage FineWeb, run `nanogpt/train.py` in tmux |
-| `deploy_tarball.sh` | workstation | tar the **working tree incl. `.env`** → GCS → VM pull/extract → `uv sync` → stage data → relaunch train in tmux. Preferred deploy for runs needing W&B (clone can't ship `.env`) and for uncommitted changes |
+| `startup_script.sh` | TPU host at boot | install uv, pull the **code tarball** from GCS (working tree incl. `.env` — no git clone), `uv sync --extra jaxtpu`, stage FineWeb, run `nanogpt/train.py` in tmux |
+| `deploy_tarball.sh` | workstation | tar the **working tree incl. `.env`** → GCS (updates `latest.tar.gz`) → VM pull/extract → `uv sync` → stage data → relaunch train in tmux. Use to redeploy code / change run env on a live VM |
 | `ops.sh` | workstation | `status`, `tail-logs`, `attach`, `ssh`, `pull-ckpt`, `delete` |
 | `_lib.sh` | sourced | dotenv loader (`shell env > .env > defaults`) |
 
@@ -28,7 +28,7 @@ with `VAR=value bash ...`.
 | `ZONE` | `europe-west4-a` | `launch_*`, `ops.sh` |
 | `BUCKET` | `llm-architectures-eu` | `setup_gcp.sh`, `ops.sh pull-ckpt` |
 | `TRC_PROFILE` | `v6e-8-eu` | `launch_spot.sh` |
-| `REPO_URL` / `REPO_BRANCH` | `cataluna84/llm-architectures` / `feat/nanoGPTJAX` | startup (clone) |
+| `CODE_TARBALL_URI` | auto (tar+upload at submit) | `launch_qr.sh` → startup (boot code; set to pin an already-uploaded tarball) |
 | `DATA_SOURCE` / `DATA_SHARDS` | `hf` / `2` | startup (FineWeb staging) |
 | `TOTAL_TRAIN_STEPS` | `50` (smoke) | startup → `NANOGPT_TOTAL_TRAIN_STEPS` |
 | `PER_DEVICE_BATCH_SIZE` | config default (32) | startup → `NANOGPT_PER_DEVICE_BATCH_SIZE` (OOM fallback) |
@@ -51,6 +51,6 @@ bash scripts/tpu/ops.sh delete                         # tear down (stops billin
 
 ## What this does NOT do
 
-- Multi-host (single-slice v6e-8/16 only) · no wandb · no Secret Manager (FineWeb is public).
+- Multi-host (single-slice v6e-8/16 only) · no Secret Manager (secrets ride in the code tarball's `.env`; the code bucket is private).
 - No auto-resume wired for the full run yet — checkpoints exist via Orbax but resume-on-preempt
   is a follow-up before long-horizon training.
