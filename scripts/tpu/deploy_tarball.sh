@@ -51,6 +51,9 @@ DATA_SHARDS="${DATA_SHARDS:-2}"
 SAVE_CKPT_DIR="${SAVE_CKPT_DIR:-}"
 NANOGPT_VAL_MAX_BATCHES="${NANOGPT_VAL_MAX_BATCHES:-200}"
 NANOGPT_RESUME_FROM_STEP="${NANOGPT_RESUME_FROM_STEP:-0}"
+# LR-sweep knobs: empty = code defaults (peak 0.02, momentum warmup 300).
+NANOGPT_OTHER_PEAK_LR="${NANOGPT_OTHER_PEAK_LR:-}"
+NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-}"
 WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 WANDB_RUN_ID="${WANDB_RUN_ID:-}"
 
@@ -95,11 +98,13 @@ export NANOGPT_PER_DEVICE_BATCH_SIZE="$PER_DEVICE_BATCH_SIZE"
 export NANOGPT_SAVE_CKPT_DIR="$SAVE_CKPT_DIR"
 export NANOGPT_VAL_MAX_BATCHES="$NANOGPT_VAL_MAX_BATCHES"
 export NANOGPT_RESUME_FROM_STEP="$NANOGPT_RESUME_FROM_STEP"
+export NANOGPT_OTHER_PEAK_LR="$NANOGPT_OTHER_PEAK_LR"
+export NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="$NANOGPT_MUON_MOMENTUM_WARMUP_STEPS"
 export WANDB_RUN_NAME="$WANDB_RUN_NAME"
 export WANDB_RUN_ID="$WANDB_RUN_ID"
 export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
-echo "[\$(date -Is)] launching train.py steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP" | tee -a /tmp/train.log
+echo "[\$(date -Is)] launching train.py steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
 "\$UV" run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log
 echo "[\$(date -Is)] train.py exited with status \$?" | tee -a /tmp/train.log
 EOF

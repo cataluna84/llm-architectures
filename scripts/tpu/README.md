@@ -35,6 +35,8 @@ with `VAR=value bash ...`.
 | `SAVE_CKPT_DIR` | unset (no save) | startup → `NANOGPT_SAVE_CKPT_DIR` (may be `gs://...`) |
 | `NANOGPT_VAL_MAX_BATCHES` | `200` | deploy_tarball → val-pass cap (0 = full val set) |
 | `NANOGPT_RESUME_FROM_STEP` | `0` | deploy_tarball → resume from a saved step after spot preemption |
+| `NANOGPT_OTHER_PEAK_LR` | unset (code default 0.02) | deploy_tarball → Muon peak LR (LR sweep) |
+| `NANOGPT_MUON_MOMENTUM_WARMUP_STEPS` | unset (code default 300) | deploy_tarball → Muon momentum warmup 0.85→0.95; `0` disables |
 | `WANDB_RUN_NAME` / `WANDB_RUN_ID` | unset | deploy_tarball → W&B run identity (fixed ID resumes the same dashboard run) |
 
 ## Typical flow

@@ -19,6 +19,9 @@ def build_optimizer(
     weight_decay: float = 0.0,
     cautious_weight_decay: float = 0.01,
     use_muon=True,
+    muon_momentum_min: float = 0.85,
+    muon_momentum_max: float = 0.95,
+    muon_momentum_warmup_steps: int = 300,
 ):
     # nanochat's width scaling for AdamW groups: (d_model / 768) ** -0.5
     dmodel_lr_scale = (d_model / 768.0) ** -0.5
@@ -29,7 +32,6 @@ def build_optimizer(
 
     if use_muon:
         print("Using Muon Optimizer!")
-        other_peak_lr = max(other_peak_lr, 2e-2)
 
     schedules = {
         "embed": optax.constant_schedule(emb_lr),
@@ -136,11 +138,35 @@ def build_optimizer(
         )
 
     def make_muon(lr_schedule, weight_decay=0.0):
-        return optax.contrib.muon(
+        # nanochat-style momentum warmup: beta ramps muon_momentum_min ->
+        # muon_momentum_max over the first muon_momentum_warmup_steps optimizer
+        # steps. optax's muon only takes beta as a plain float, so the schedule
+        # goes through inject_hyperparams; warmup_steps=0 keeps the plain path
+        # (and the optim-state structure of checkpoints saved before this).
+        if muon_momentum_warmup_steps > 0:
+            factory = optax.inject_hyperparams(
+                optax.contrib.muon,
+                # ns_steps slices ns_coeffs at init time and must stay
+                # concrete; mu_dtype is a callable class that inject would
+                # otherwise wrap as a schedule; float32 because the
+                # injected-hyperparam dtype otherwise follows the bf16 params
+                # and would quantize the lr/beta schedules.
+                static_args=("ns_steps", "mu_dtype"),
+                hyperparam_dtype=jnp.float32,
+            )
+            beta = optax.linear_schedule(
+                init_value=muon_momentum_min,
+                end_value=muon_momentum_max,
+                transition_steps=muon_momentum_warmup_steps,
+            )
+        else:
+            factory = optax.contrib.muon
+            beta = muon_momentum_max
+        return factory(
             learning_rate=lr_schedule,
             ns_coeffs=(3.4445, -4.775, 2.0315),
             ns_steps=5,
-            beta=b2,
+            beta=beta,
             eps=1e-8,
             weight_decay=0.0,
             weight_decay_mask=muon_wd_mask,

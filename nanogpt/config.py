@@ -20,6 +20,16 @@ def _env_int(name: str, default: int) -> int:
     return int(val) if val else default
 
 
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    return float(val) if val else default
+
+
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    return float(val) if val else default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     val = os.environ.get(name)
     if not val:
@@ -339,6 +349,12 @@ class HyperParams:
     other_peak_lr: float = 0.02
     b1: float = 0.8
     b2: float = 0.95
+    # Muon momentum warmup (nanochat: linear 0.85 -> 0.95 over the first 300
+    # optimizer steps, absolute regardless of run length). warmup_steps = 0
+    # disables the schedule and uses a plain constant beta = muon_momentum_max.
+    muon_momentum_min: float = 0.85
+    muon_momentum_max: float = 0.95
+    muon_momentum_warmup_steps: int = 300
     weight_decay: float = 0.0
     cautious_weight_decay: float = 0.01
     grad_clip_norm: float = 1.0
@@ -374,6 +390,11 @@ class HyperParams:
             "NANOGPT_WARMUP_STEPS", int(min(300, 0.01 * self.total_train_steps))
         )
         self.val_max_batches = _env_int("NANOGPT_VAL_MAX_BATCHES", self.val_max_batches)
+        # LR-sweep / momentum-warmup knobs (see docs/training.md).
+        self.other_peak_lr = _env_float("NANOGPT_OTHER_PEAK_LR", self.other_peak_lr)
+        self.muon_momentum_warmup_steps = _env_int(
+            "NANOGPT_MUON_MOMENTUM_WARMUP_STEPS", self.muon_momentum_warmup_steps
+        )
 
 
 @jax_pytree_struct

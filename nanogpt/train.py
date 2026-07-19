@@ -247,7 +247,7 @@ def main():
     tx, lr_schedules = build_optimizer(
         model,
         d_model=cfg.model.d_emb,
-        other_peak_lr=max_lr,
+        other_peak_lr=cfg.hparams.other_peak_lr,
         other_min_lr=min_lr,
         total_train_steps=total_train_steps,
         warmup_steps=warmup_steps,
@@ -256,6 +256,9 @@ def main():
         embedding_lr=cfg.hparams.embedding_lr,
         weight_decay=cfg.hparams.weight_decay,
         cautious_weight_decay=cfg.hparams.cautious_weight_decay,
+        muon_momentum_min=cfg.hparams.muon_momentum_min,
+        muon_momentum_max=cfg.hparams.muon_momentum_max,
+        muon_momentum_warmup_steps=cfg.hparams.muon_momentum_warmup_steps,
     )
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
@@ -263,6 +266,14 @@ def main():
     )
     # Schedule for the main (Muon "other") param group — logged as train/lr.
     lr_fn = lr_schedules["other"]
+
+    # Host-side mirror of the Muon momentum warmup (logged as train/muon_beta).
+    def muon_beta_fn(_step):
+        hp = cfg.hparams
+        if hp.muon_momentum_warmup_steps <= 0:
+            return hp.muon_momentum_max
+        frac = min(_step / hp.muon_momentum_warmup_steps, 1.0)
+        return (1.0 - frac) * hp.muon_momentum_min + frac * hp.muon_momentum_max
 
     if grad_accum_steps > 1:
         print("Using `MultiSteps` in optax for gradient accumulation...")
@@ -291,6 +302,8 @@ def main():
     print(line("Grad accumulation steps", grad_accum_steps))
     print()
     print(line("LR (min, max)", str((f"{min_lr:.6f}", f"{max_lr:.6f}"))))
+    print(line("Muon peak LR (other)", f"{cfg.hparams.other_peak_lr:.6f}"))
+    print(line("Muon momentum warmup steps", cfg.hparams.muon_momentum_warmup_steps))
     print(line("Warmup steps", cfg.hparams.warmup_steps))
     print(line("Weight decay", cfg.hparams.weight_decay), "\n")
     print("-" * 75)
@@ -316,6 +329,10 @@ def main():
             "desired_batch_size": desired_batch_size,
             "max_lr": max_lr,
             "min_lr": min_lr,
+            "other_peak_lr": cfg.hparams.other_peak_lr,
+            "muon_momentum_min": cfg.hparams.muon_momentum_min,
+            "muon_momentum_max": cfg.hparams.muon_momentum_max,
+            "muon_momentum_warmup_steps": cfg.hparams.muon_momentum_warmup_steps,
             "warmup_steps": warmup_steps,
             "weight_decay": cfg.hparams.weight_decay,
             "total_train_steps": total_train_steps,
@@ -511,6 +528,7 @@ def main():
                             {
                                 "train/loss": float(loss),
                                 "train/lr": float(lr_fn(step)),
+                                "train/muon_beta": muon_beta_fn(step),
                                 "perf/tokens_per_sec": tokens_per_sec,
                                 "perf/step_time_s": dt,
                                 "perf/mfu": mfu,
