@@ -347,22 +347,28 @@ def main():
     )
     peak_flops_total = device_peak_flops() * len(devices)
 
-    # Checkpointing. epath (an orbax dep) instead of pathlib: pathlib collapses
-    # "gs://bucket" to "gs:/bucket", breaking GCS checkpoint dirs on TPU.
-    ckpt_path = epath.Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
+    # Checkpointing — only when a save dir is configured. Smoke/sweep runs set
+    # none, and orbax rejects the relative path that results at the first save
+    # ("Checkpoint path should be absolute"). epath (an orbax dep) instead of
+    # pathlib: pathlib collapses "gs://bucket" to "gs:/bucket", breaking GCS
+    # checkpoint dirs on TPU.
     options = ocp.CheckpointManagerOptions(
         max_to_keep=max_checkpoints_to_keep,
         save_interval_steps=checkpoint_save_steps,
         enable_async_checkpointing=True,
         enable_background_delete=True,
     )
-    handlers = {
-        "params": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
-        "optim_state": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
-        "ds": ocp.Checkpointer(grain.checkpoint.CheckpointHandler()),
-    }
-
-    mngr = ocp.CheckpointManager(ckpt_path, handlers, options=options)
+    if str(cfg.ckpt_cfg.save_ckpt_dir):
+        ckpt_path = epath.Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
+        handlers = {
+            "params": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
+            "optim_state": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
+            "ds": ocp.Checkpointer(grain.checkpoint.CheckpointHandler()),
+        }
+        mngr = ocp.CheckpointManager(ckpt_path, handlers, options=options)
+    else:
+        mngr = None
+        print("No save_ckpt_dir configured — checkpoint saving disabled.")
 
     # Compute the frequencies
     positions = jnp.arange(seqlen)[None, :]
@@ -375,6 +381,9 @@ def main():
     segment_ids = None
     resume_from_step = cfg.ckpt_cfg.last_checkpoint_step
 
+    if resume_from_step > 0 and mngr is None:
+        print("NANOGPT_RESUME_FROM_STEP set but no save_ckpt_dir — ignoring resume.")
+        resume_from_step = 0
     if resume_from_step > 0:
         # Checkpoints live under ckpt_path (save_ckpt_dir / run_name), and
         # epath.exists() works for both local and gs:// paths.
@@ -417,8 +426,9 @@ def main():
     # Training loop with explicit counter
     for shard in train_iter:
         if step >= total_train_steps or training_complete:
-            mngr.wait_until_finished()
-            print("Finished checkpointing! Cleaned.")
+            if mngr is not None:
+                mngr.wait_until_finished()
+                print("Finished checkpointing! Cleaned.")
             break
 
         tokens = shard["tokens"]
@@ -541,7 +551,7 @@ def main():
 
                     step += 1
 
-                    if (step % options.save_interval_steps) == 0:
+                    if mngr is not None and (step % options.save_interval_steps) == 0:
                         mngr.save(
                             step,
                             args=ocp.args.Composite(
@@ -557,8 +567,9 @@ def main():
                         )
                         print(f"Total number of shards consumed : {num_shards_used}")
                         print(f"Best loss : {best_loss:.4f} at step {best_step}")
-                        mngr.wait_until_finished()
-                        print("Finished checkpointing! Cleaned.")
+                        if mngr is not None:
+                            mngr.wait_until_finished()
+                            print("Finished checkpointing! Cleaned.")
                         training_complete = True
                         break
 
@@ -641,7 +652,8 @@ def main():
                         print(f"Total number of shards consumed : {num_shards_used}")
                         print(f"Best loss                       : {best_loss:.4f} at step {best_step}")
                         # fmt: on
-                        mngr.wait_until_finished()
+                        if mngr is not None:
+                            mngr.wait_until_finished()
                         training_complete = True
                         break
 
