@@ -7,9 +7,11 @@
 #
 # Usage:
 #   TRC_PROFILE=v6e-8-eu  bash scripts/tpu/launch_spot.sh   # smoke / eval (default)
+#   TRC_PROFILE=v6e-8-us  bash scripts/tpu/launch_spot.sh   # US fallback when EU spot churns
 #   TRC_PROFILE=v6e-16-eu bash scripts/tpu/launch_spot.sh   # future scale-up
 #
-# Zones/quota: europe-west4-a (TRC v6e). See docs/tpu-runbook.md.
+# Zones/quota: europe-west4-a, us-east1-d (TRC v6e; override the us zone with
+# ZONE=us-east5-b etc. if quota rejects). See docs/tpu-runbook.md.
 
 set -euo pipefail
 
@@ -25,6 +27,13 @@ case "$TRC_PROFILE" in
         DEFAULT_QR="nanogpt-v6e8-baseline-qr"
         DEFAULT_NODE="nanogpt-v6e8-baseline"
         ;;
+    v6e-8-us)
+        ACCEL_TYPE="${ACCEL_TYPE:-v6e-8}"
+        ZONE="${ZONE:-us-east1-d}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv6e}"
+        DEFAULT_QR="nanogpt-v6e8-baseline-qr"
+        DEFAULT_NODE="nanogpt-v6e8-baseline"
+        ;;
     v6e-16-eu)
         ACCEL_TYPE="${ACCEL_TYPE:-v6e-16}"
         ZONE="${ZONE:-europe-west4-a}"
@@ -33,7 +42,7 @@ case "$TRC_PROFILE" in
         DEFAULT_NODE="nanogpt-v6e16"
         ;;
     *)
-        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-16-eu)" >&2
+        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-8-us, v6e-16-eu)" >&2
         exit 2
         ;;
 esac
