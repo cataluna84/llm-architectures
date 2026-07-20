@@ -117,8 +117,20 @@ for rf in "${RUNS_FILES[@]}"; do
 
         gen=$(( gen + 1 ))
         tag="vmrun${gen}-$(date +%s)"
-        spec="$(for kv in $line; do printf 'export %s\n' "$kv"; done
-                printf 'export RUN_TAG=%s\n' "$tag")"
+        # Translate runs-file keys to the env config.py actually reads —
+        # exactly deploy_tarball's mapping. Publishing TOTAL_TRAIN_STEPS
+        # verbatim once launched a default-config run (per-device 32) that
+        # OOMed with 86G of temporaries; config.py only reads NANOGPT_*.
+        spec="$(for kv in $line; do
+            k="${kv%%=*}"
+            case "$k" in
+                TOTAL_TRAIN_STEPS|PER_DEVICE_BATCH_SIZE|SAVE_CKPT_DIR)
+                    printf 'export NANOGPT_%s\n' "$kv" ;;
+                RUN_TIMEOUT_SECONDS|DATA_SHARDS) ;;  # coordinator/staging-only
+                *) printf 'export %s\n' "$kv" ;;
+            esac
+        done
+        printf 'export RUN_TAG=%s\n' "$tag")"
         printf '%s\n' "$spec" | gcloud storage cp - "$PREFIX/spec-$gen.env"
         log "published spec-$gen ($key, timeout ${run_timeout}s)"
 
