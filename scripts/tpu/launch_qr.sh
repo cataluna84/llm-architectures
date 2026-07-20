@@ -92,6 +92,8 @@ metadata_pairs+=",resume-from-step=$RESUME_FROM_STEP"
 [ -n "$WANDB_RUN_ID" ] && metadata_pairs+=",wandb-run-id=$WANDB_RUN_ID"
 [ -n "$NANOGPT_VAL_MAX_BATCHES" ] && metadata_pairs+=",val-max-batches=$NANOGPT_VAL_MAX_BATCHES"
 [ -n "$NANOGPT_DEVICE_PEAK_FLOPS" ] && metadata_pairs+=",device-peak-flops=$NANOGPT_DEVICE_PEAK_FLOPS"
+# Stage to resume into after a preemption reboot (default: pretraining).
+[ -n "${NANOGPT_ENTRYPOINT:-}" ] && metadata_pairs+=",entrypoint=$NANOGPT_ENTRYPOINT"
 
 echo "==> creating Queued Resource"
 echo "    project:      $PROJECT_ID"

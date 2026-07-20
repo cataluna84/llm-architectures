@@ -37,6 +37,10 @@ WANDB_RUN_NAME_META="$(read_meta wandb-run-name '')"
 WANDB_RUN_ID_META="$(read_meta wandb-run-id '')"
 VAL_MAX_BATCHES_META="$(read_meta val-max-batches '')"
 DEVICE_PEAK_FLOPS_META="$(read_meta device-peak-flops '')"
+# Which stage a preemption reboot resumes into. Carried in QR metadata so a
+# recycled node restarts the stage that was actually running, not always
+# pretraining.
+ENTRYPOINT="$(read_meta entrypoint nanogpt/train.py)"
 TMUX_SESSION="${TMUX_SESSION:-train}"
 
 echo "[startup] code=$CODE_TARBALL_URI  data-source=$DATA_SOURCE shards=$DATA_SHARDS"
@@ -124,9 +128,9 @@ tmux new-session -d -s "$TMUX_SESSION" "
     export NANOGPT_VAL_MAX_BATCHES='${VAL_MAX_BATCHES_META}'
     export NANOGPT_DEVICE_PEAK_FLOPS='${DEVICE_PEAK_FLOPS_META}'
     export PYTHONUNBUFFERED=1
-    echo \"[\$(date -Is)] launching nanogpt/train.py on \$(python -c 'import jax;print(jax.devices())' 2>/dev/null)\" | tee -a /tmp/train.log
-    '$UV' run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log
-    echo \"[\$(date -Is)] train.py exited with status \$?\" | tee -a /tmp/train.log
+    echo \"[\$(date -Is)] launching ${ENTRYPOINT} tag=boot-\$(date +%s) on \$(python -c 'import jax;print(jax.devices())' 2>/dev/null)\" | tee -a /tmp/train.log
+    '$UV' run python -u '${ENTRYPOINT}' 2>&1 | tee -a /tmp/train.log
+    echo \"[\$(date -Is)] ${ENTRYPOINT} exited with status \$?\" | tee -a /tmp/train.log
 "
 chmod 0644 /tmp/train.log 2>/dev/null || true
 

@@ -44,6 +44,12 @@ CODE_PREFIX="${CODE_PREFIX:-nanogptjax/code}"
 REPO_DIR="${REPO_DIR:-/opt/llm-architectures}"
 TMUX_SESSION="${TMUX_SESSION:-train}"
 
+# Which stage to run. Any script in the repo works: nanogpt/train.py (pretrain),
+# nanogpt/train_sft.py (SFT), etc. The launcher's log markers carry this value
+# so orchestrators stay stage-agnostic — see the "exited with status" marker
+# below, which sweep_runner.sh matches without knowing the stage.
+NANOGPT_ENTRYPOINT="${NANOGPT_ENTRYPOINT:-nanogpt/train.py}"
+
 # ---- training knobs (exported into the tmux launcher on the VM) ----
 TOTAL_TRAIN_STEPS="${TOTAL_TRAIN_STEPS:-50}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
@@ -111,9 +117,9 @@ export NANOGPT_OTHER_PEAK_LR="$NANOGPT_OTHER_PEAK_LR"
 export NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="$NANOGPT_MUON_MOMENTUM_WARMUP_STEPS"
 ${WANDB_ENV_LINES}export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
-echo "[\$(date -Is)] launching train.py tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
-"\$UV" run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log
-echo "[\$(date -Is)] train.py exited with status \$?" | tee -a /tmp/train.log
+echo "[\$(date -Is)] launching $NANOGPT_ENTRYPOINT tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
+"\$UV" run python -u "$NANOGPT_ENTRYPOINT" 2>&1 | tee -a /tmp/train.log
+echo "[\$(date -Is)] $NANOGPT_ENTRYPOINT exited with status \$?" | tee -a /tmp/train.log
 EOF
 
 # Runs once via `sudo bash` on the VM: pull, extract, sync, stage data, tmux.
