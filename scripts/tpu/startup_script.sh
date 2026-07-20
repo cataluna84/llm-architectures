@@ -130,7 +130,8 @@ tmux new-session -d -s "$TMUX_SESSION" "
     export PYTHONUNBUFFERED=1
     echo \"[\$(date -Is)] launching ${ENTRYPOINT} tag=boot-\$(date +%s) on \$(python -c 'import jax;print(jax.devices())' 2>/dev/null)\" | tee -a /tmp/train.log
     '$UV' run python -u '${ENTRYPOINT}' 2>&1 | tee -a /tmp/train.log
-    echo \"[\$(date -Is)] ${ENTRYPOINT} exited with status \$?\" | tee -a /tmp/train.log
+    rc=\$?
+    echo \"[\$(date -Is)] ${ENTRYPOINT} exited with status \$rc\" | tee -a /tmp/train.log
 "
 chmod 0644 /tmp/train.log 2>/dev/null || true
 

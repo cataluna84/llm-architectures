@@ -119,7 +119,12 @@ ${WANDB_ENV_LINES}export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
 echo "[\$(date -Is)] launching $NANOGPT_ENTRYPOINT tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
 "\$UV" run python -u "$NANOGPT_ENTRYPOINT" 2>&1 | tee -a /tmp/train.log
-echo "[\$(date -Is)] $NANOGPT_ENTRYPOINT exited with status \$?" | tee -a /tmp/train.log
+# Capture \$? BEFORE the echo: the \$(date -Is) substitution on that line runs
+# first and resets \$? to date's status, so an inline \$? always reported 0 —
+# even for a fatal traceback. Every "exited with status" line written before
+# 2026-07-20 says 0 regardless of what actually happened.
+rc=\$?
+echo "[\$(date -Is)] $NANOGPT_ENTRYPOINT exited with status \$rc" | tee -a /tmp/train.log
 EOF
 
 # Runs once via `sudo bash` on the VM: pull, extract, sync, stage data, tmux.

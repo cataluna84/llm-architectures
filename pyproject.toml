@@ -18,6 +18,10 @@ dependencies = [
     "grain==0.2.18",
     "tqdm==4.69.0",
     "wandb==0.28.1",
+    # Required by orbax/etils.epath to read or write gs:// checkpoint paths;
+    # without it CheckpointManager raises "Please install gcsfs to access
+    # Google Storage" at construction, before training starts.
+    "gcsfs==2026.6.0",
 ]
 
 [project.optional-dependencies]

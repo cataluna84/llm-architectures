@@ -138,7 +138,12 @@ while IFS= read -r -u3 line || [ -n "$line" ]; do
             echo "[sweep $(_ts)] run #$run_no finished:"
             echo "$status"
             [ -n "$best" ] && echo "$best"
-            if echo "$status" | grep -q "Reached maximum training steps"; then
+            # Two independent success conditions, because either alone has
+            # failed us: the success marker (the exit status was cosmetically
+            # always 0 until 2026-07-20) and a zero exit status (a run can
+            # crash after printing the marker).
+            if echo "$status" | grep -q "Reached maximum training steps" \
+               && ! echo "$status" | grep -qE 'exited with status [^0]'; then
                 notify "sweep_runner: run #$run_no OK — ${best:-no val loss recorded}"
             else
                 echo "[sweep $(_ts)] ABORT: run #$run_no did not complete cleanly"

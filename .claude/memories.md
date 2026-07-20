@@ -68,11 +68,24 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
   user directive). v5e-64: per-device 4, accum 1 (single micro-batch =
   B_ref); v6e-8: per-device 4, accum 8 (bsz 8 fits but is no faster —
   bandwidth-bound). B_ref = 524,288 tokens/step, always.
-- **2026-07-19: Muon peak LR = 0.02** (empirical 3-point sweep on v6e-8, best
-  val @902: 0.02→3.6011, 0.028→3.6008 tie, 0.014→3.6140; tie resolves to the
-  nanochat-validated value). Momentum warmup 0.85→0.95/300 steps (nanochat)
-  implemented via optax inject_hyperparams (`hyperparam_dtype=float32`,
-  `static_args=("ns_steps","mu_dtype")`).
+- **2026-07-20: sweep concluded on v5e-64 — LR 0.02, momentum warmup ON.**
+  Best val @905 over 1000 steps: 0.014→3.6186, **0.020→3.5952**, 0.028→3.5983,
+  0.020-without-warmup→3.6322.
+  - **Momentum warmup is the real finding**: 0.0370 better than constant beta,
+    ~12x the spread between the two best LRs and well outside single-seed noise.
+  - **LR 0.020 vs 0.028 is a plateau, not a ranking** (0.0031 apart, <0.1%, and
+    the two slices order them oppositely — v6e-8 had 0.028 ahead by 0.0003).
+    Only 0.014 is clearly worse. The tie breaks to 0.02 as the nanochat value.
+    Do not cite the sweep as evidence that 0.028 is harmful.
+  Momentum warmup 0.85→0.95/300 steps implemented via optax inject_hyperparams
+  (`hyperparam_dtype=float32`, `static_args=("ns_steps","mu_dtype")`).
+- **2026-07-20: checkpointing had NEVER run** — the GCS checkpoint prefix was
+  empty after every run to date, because each sweep run left `SAVE_CKPT_DIR`
+  unset. Always exercise checkpoint+resume in a ~120-step smoke
+  (`runs/v5e64-ckpt-smoke.runs`, `checkpoint_save_steps=100`) before committing
+  to a long run: orbax saves are collective across all 16 hosts, so a
+  multi-host save bug *hangs* rather than erroring, and the whole T3
+  auto-recycle policy assumes resume works.
 - **2026-07-19: code reaches TPU VMs ONLY as a GCS tarball incl. `.env`**
   (launch_qr.sh tars+uploads at submit; startup_script.sh extracts; no git
   clone anywhere). This is how WANDB_* credentials reach the VM.

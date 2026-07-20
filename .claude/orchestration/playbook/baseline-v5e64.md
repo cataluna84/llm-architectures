@@ -49,15 +49,35 @@ Muon peak-LR sweep, best val loss at ~step 902-905, 1000-step runs:
 
 | Peak LR | v6e-8 | v5e-64 |
 |---|---|---|
-| 0.014 | 3.6140 | pending |
+| 0.014 | 3.6140 | 3.6186 |
 | **0.020** | 3.6011 | **3.5952** |
-| 0.028 | 3.6008 | pending |
+| 0.028 | 3.6008 | 3.5983 |
 
-Selected: **0.02** (v6e-8 tie between 0.02 and 0.028 resolved to the
-nanochat-validated value). v5e-64 at the same LR came in slightly better, as
-expected from accum=1 versus accum=8 numerics.
+**Selected: peak LR 0.02, momentum warmup ON.**
 
-Momentum warmup A/B (`020` vs `020-nomom`) is still outstanding.
+Read the LR result honestly: 0.020 and 0.028 are a *plateau*, not a ranking.
+They differ by 0.0031 on v5e-64 (<0.1%, single seed) and the two slices order
+them oppositely — v6e-8 put 0.028 ahead by 0.0003. What the sweep actually
+establishes is that **0.014 is clearly worse** on both slices. The tie breaks to
+0.020 as the nanochat-validated value. Do not read the 0.020 win as evidence
+that 0.028 is harmful.
+
+Momentum warmup A/B at LR 0.020 (v5e-64, 1000 steps):
+
+| Muon momentum | Best val @905 |
+|---|---|
+| **warmup 0.85 -> 0.95 over 300 steps** | **3.5952** |
+| constant 0.95 (`WARMUP_STEPS=0`) | 3.6322 |
+
+**Momentum warmup stays ON.** The 0.0370 gap is ~12x the entire spread between
+the two best learning rates, making it the most consequential single knob the
+sweep tested — and the only one whose result is well outside single-seed noise.
+
+v5e-64 at LR 0.020 also beat its v6e-8 twin (3.5952 vs 3.6011), consistent with
+accum=1 versus accum=8 numerics at identical tokens/step.
+
+Caveat: `v6e8-lrsweep-020` predates the empty-`WANDB_RUN_ID` fix and exists only
+in console logs, so the v6e-8 column is not fully reproducible from W&B.
 
 ## Regression triggers
 
