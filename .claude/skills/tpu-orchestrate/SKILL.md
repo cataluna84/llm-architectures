@@ -1,9 +1,22 @@
 ---
 name: tpu-orchestrate
-description: Run-control playbook for nanoGPT-JAX TPU runs — how orchestration is layered, where truth lives, and the recovery ladder. Load when operating, debugging, or resuming a TPU run.
+description: Run-control playbook for llm-architectures TPU runs — how orchestration is layered, where truth lives, and the recovery ladder. Load when operating, debugging, or resuming a TPU run.
 ---
 
-# TPU run-control (nanoGPT-JAX)
+# TPU run-control (llm-architectures)
+
+**Design source-of-truth is `.claude/orchestration/`.** This skill is the
+operational quick reference; read the folder when you need the reasoning:
+
+| Need | File |
+|---|---|
+| Which surface owns a fact | `orchestration/CONTROL_PLANE.md` |
+| The run loop + recovery ladder | `orchestration/SPEC.md` |
+| What to do at each tier | `orchestration/playbook/tier-definitions.md` |
+| Signature → classification | `.claude/agents/tpu-diagnoser.md` |
+| Known-good numbers | `orchestration/playbook/baseline-v5e64.md` |
+| Metric names + invariants | `orchestration/playbook/perf-metrics-schema.md` |
+| ntfy event meanings | `orchestration/playbook/event-taxonomy.md` |
 
 ## Layering — who owns what
 

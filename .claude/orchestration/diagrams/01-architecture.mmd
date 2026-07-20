@@ -1,0 +1,44 @@
+---
+title: llm-architectures TPU orchestration — layers and what each survives
+---
+flowchart TD
+    subgraph L1["Layer 1 — Claude session (disposable)"]
+        CS["reads logs, decides, edits code<br/>NEVER owns a long loop"]
+    end
+
+    subgraph L2["Layer 2 — Workstation tmux (survives Claude)"]
+        QW["qrwatch<br/>scripts/tpu/qr_watch.sh<br/>/tmp/qr_watch.log"]
+        SW["sweep<br/>scripts/tpu/sweep_runner.sh<br/>/tmp/sweep_runner.log"]
+    end
+
+    subgraph L3["Layer 3 — QR metadata (survives node reboot)"]
+        MD["code-tarball-uri<br/>resume-from-step=auto<br/>W&B run identity"]
+    end
+
+    subgraph L4["Layer 4 — VM tmux 'train' (survives workstation)"]
+        W0["worker 0<br/>/tmp/train.log"]
+        WN["workers 1..15<br/>/tmp/train.log"]
+    end
+
+    subgraph L5["Layer 5 — External (survives everything)"]
+        GCS["GCS<br/>checkpoints + code tarball"]
+        WB["W&B<br/>metrics"]
+        NT["ntfy.sh<br/>push events"]
+    end
+
+    CS -.reads.-> QW
+    CS -.reads.-> SW
+    SW -->|deploy_tarball.sh| W0
+    SW -->|--worker=all| WN
+    QW -->|recycle on preemption| MD
+    MD -->|boot self-heal| W0
+    W0 <-->|jax.distributed rendezvous| WN
+    W0 --> GCS
+    W0 --> WB
+    QW --> NT
+    SW --> NT
+
+    classDef ephemeral fill:#fff3cd,stroke:#856404
+    classDef durable fill:#d4edda,stroke:#155724
+    class CS ephemeral
+    class GCS,WB,NT durable

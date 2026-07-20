@@ -1,0 +1,46 @@
+---
+title: Run loop — DEPLOY / WATCH / CLASSIFY / RECOVER
+---
+stateDiagram-v2
+    [*] --> READY: fleet gate<br/>(all workers report startup complete)
+    READY --> DEPLOY
+
+    DEPLOY: DEPLOY
+    DEPLOY: tar working tree -> GCS
+    DEPLOY: pull on --worker=all
+    DEPLOY: relaunch tmux 'train', bake RUN_TAG
+
+    DEPLOY --> WATCH
+
+    WATCH: WATCH
+    WATCH: poll worker 0 log, scoped AFTER this RUN_TAG
+    WATCH: status markers via tail (never head)
+    WATCH: 'Best loss' fetched separately
+
+    WATCH --> WATCH: step lines advancing (T0)
+    WATCH --> WATCH: benign stall — compile / val pass / ckpt (T1)
+
+    WATCH --> NEXT: clean exit<br/>'Reached maximum training steps'
+    WATCH --> CLASSIFY: dirty exit or timeout
+    WATCH --> T3: node preempted / unreachable
+
+    NEXT: NEXT RUN
+    NEXT --> DEPLOY: more lines in runs file
+    NEXT --> [*]: runs file exhausted
+
+    CLASSIFY: CLASSIFY
+    CLASSIFY: match tpu-diagnoser signature table
+    CLASSIFY --> DEPLOY: T2 — known fix, not a repeat
+    CLASSIFY --> STOP: T4 — unknown, or same class twice
+
+    T3: T3 — qr_watch recycles
+    T3: forensics -> quota check -> delete -> resubmit
+    T3 --> BOOT: within budget (20)
+    T3 --> STOP: budget spent or quota abort
+
+    BOOT: BOOT SELF-HEAL
+    BOOT: fetch tarball, resume=auto, same W&B run
+    BOOT --> WATCH
+
+    STOP: STOP + notify
+    STOP --> [*]

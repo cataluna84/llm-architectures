@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""SessionStart hook: inject the four memory files plus the right
-AGENTS.md tier(s) into Claude's context for this session.
+"""SessionStart hook: inject the four memory files, the right AGENTS.md
+tier(s), and the orchestration control plane into Claude's context.
+
+Line caps are deliberately tight: this payload is prepended to every session,
+so each file gets only enough to orient, not its full contents.
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ from _lib import (  # noqa: E402
     PLAN_FILE,
     VERIFY_FILE,
     MEMORIES_FILE,
+    ORCHESTRATION_DIR,
     emit,
     find_relevant_subproject_agents,
     read_file_safe,
@@ -55,6 +59,19 @@ def main() -> None:
 
     parts.append("\n## memories.md (decisions and gotchas)\n")
     parts.append(read_file_safe(MEMORIES_FILE, max_lines=120))
+
+    # Orchestration: surface ownership first, then the run-control invariants.
+    # The full spec, playbook, and diagrams are read on demand via the
+    # tpu-orchestrate skill rather than injected here.
+    control_plane = ORCHESTRATION_DIR / "CONTROL_PLANE.md"
+    if control_plane.exists():
+        parts.append("\n## orchestration control plane\n")
+        parts.append(read_file_safe(control_plane, max_lines=100))
+
+    spec = ORCHESTRATION_DIR / "SPEC.md"
+    if spec.exists():
+        parts.append("\n## orchestration SPEC (run-control summary)\n")
+        parts.append(read_file_safe(spec, max_lines=60))
 
     additional_context = "\n".join(parts).strip()
 

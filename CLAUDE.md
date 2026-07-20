@@ -91,3 +91,15 @@ from the prompt: `#progress …`, `#decision …`, `#plan …`; slash commands:
 `/tmp/sweep_runner.log`). TPU VMs: session `train` (`ops.sh attach|tail-logs`).
 Push events: `https://ntfy.sh/$NTFY_TOPIC` (topic in `.env`). Live metrics:
 https://wandb.ai/cataluna84/llm-architectures.
+
+**Run-control design lives in `.claude/orchestration/`** (repo-level, not
+nanoGPT-specific): `CONTROL_PLANE.md` for which surface owns which fact,
+`SPEC.md` for the run loop and recovery ladder, `playbook/` for tier policy,
+baselines, metric schema, and the ntfy event taxonomy, `diagrams/*.mmd` for the
+layering. Load the `tpu-orchestrate` skill when operating a run; the canonical
+failure-signature table is `.claude/agents/tpu-diagnoser.md`.
+
+Two invariants govern every training run: **tokens/step = 524,288** and
+**val subset = 6,400 rows** (`NANOGPT_VAL_MAX_BATCHES × global_rows`,
+recomputed whenever batch or topology changes). Breaking either makes results
+incomparable to every run recorded so far.

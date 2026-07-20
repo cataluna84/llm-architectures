@@ -23,3 +23,246 @@ created `/home/cataluna84/Workspace/llm-architectures/.claude/PROGRESS.md`
 ## 2026-07-20T05:24:34Z | feat/nanoGPTJAX@4208e18 | done | edit
 created `/home/cataluna84/Workspace/llm-architectures/.claude/VERIFY.md`
 
+
+## 2026-07-20T05:26:04Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/config.py`
+
+
+## 2026-07-20T05:26:06Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T05:26:28Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/config.py`
+
+
+## 2026-07-20T05:27:16Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T05:27:18Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T05:27:40Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/sweep_runner.sh`
+
+
+## 2026-07-20T05:27:51Z | feat/nanoGPTJAX@5087279 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/sweep_runner.sh`
+
+
+## 2026-07-20T05:28:12Z | feat/nanoGPTJAX@6340fdd | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T05:28:23Z | feat/nanoGPTJAX@6340fdd | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/launch_qr.sh`
+
+
+## 2026-07-20T05:28:27Z | feat/nanoGPTJAX@6340fdd | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/launch_qr.sh`
+
+
+## 2026-07-20T05:28:40Z | feat/nanoGPTJAX@6340fdd | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/startup_script.sh`
+
+
+## 2026-07-20T05:28:45Z | feat/nanoGPTJAX@6340fdd | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/startup_script.sh`
+
+
+## 2026-07-20T05:29:02Z | feat/nanoGPTJAX@84d9434 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T05:29:30Z | feat/nanoGPTJAX@84d9434 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-watchdog.md`
+
+
+## 2026-07-20T05:29:46Z | feat/nanoGPTJAX@84d9434 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-diagnoser.md`
+
+
+## 2026-07-20T05:30:07Z | feat/nanoGPTJAX@84d9434 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/skills/tpu-orchestrate/SKILL.md`
+
+
+## 2026-07-20T05:30:24Z | feat/nanoGPTJAX@0eec7af | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T05:31:33Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/sweep_runner.sh`
+
+
+## 2026-07-20T05:31:36Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/sweep_runner.sh`
+
+
+## 2026-07-20T05:31:43Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/sweep_runner.sh`
+
+
+## 2026-07-20T05:31:56Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-lr.runs`
+
+
+## 2026-07-20T05:32:01Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-lr.runs`
+
+
+## 2026-07-20T05:32:08Z | feat/nanoGPTJAX@0eec7af | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/memories.md`
+
+
+## 2026-07-20T05:32:30Z | feat/nanoGPTJAX@5caac7b | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T05:32:48Z | feat/nanoGPTJAX@5caac7b | fail | verify
+verify: 3 passed, 1 failed out of 4 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T05:33:34Z | feat/nanoGPTJAX@5caac7b | fail | verify
+verify: 3 passed, 1 failed out of 4 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T05:33:34Z | feat/nanoGPTJAX@5caac7b | info | session
+PreCompact (manual): 7 unchecked PLAN items
+
+Top open items:
+- v5e-64 smoke at per-device 4 (accum=1, ~80% HBM) — in flight via `sweep`
+- v5e-64 sweep matrix: 020 / 014 / 028 / 020-nomom (1000 steps each)
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run on v5e-64 (`v5e64-baseline-10k`), ckpts ->
+- Auto-resume (`NANOGPT_RESUME_FROM_STEP=auto`) + W&B identity in boot
+- tpu-watchdog / tpu-diagnoser agents + tpu-orchestrate skill (Tier 4)
+- Post-run: README benchmarking table + results on PR #1
+
+
+## 2026-07-20T05:51:15Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/.claude/plans/ok-go-ahead-for-eventual-cloud.md`
+
+
+## 2026-07-20T05:54:34Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/.claude/plans/ok-go-ahead-for-eventual-cloud.md`
+
+
+## 2026-07-20T05:56:11Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/README.md`
+
+
+## 2026-07-20T05:56:41Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/CONTROL_PLANE.md`
+
+
+## 2026-07-20T05:57:21Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/SPEC.md`
+
+
+## 2026-07-20T05:57:34Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/SPEC.md`
+
+
+## 2026-07-20T05:57:37Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/CONTROL_PLANE.md`
+
+
+## 2026-07-20T05:57:45Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/README.md`
+
+
+## 2026-07-20T05:57:50Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/README.md`
+
+
+## 2026-07-20T05:57:59Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/CONTROL_PLANE.md`
+
+
+## 2026-07-20T05:58:13Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playbook/tier-definitions.md`
+
+
+## 2026-07-20T05:58:26Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playbook/diagnosis-table.md`
+
+
+## 2026-07-20T05:58:39Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playbook/event-taxonomy.md`
+
+
+## 2026-07-20T05:59:01Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playbook/baseline-v5e64.md`
+
+
+## 2026-07-20T05:59:14Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playbook/perf-metrics-schema.md`
+
+
+## 2026-07-20T05:59:26Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/diagrams/01-architecture.mmd`
+
+
+## 2026-07-20T05:59:37Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/diagrams/02-state-machine.mmd`
+
+
+## 2026-07-20T05:59:50Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/diagrams/03-memory-lifecycle.mmd`
+
+
+## 2026-07-20T06:00:00Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.gitignore`
+
+
+## 2026-07-20T06:00:27Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/hooks/session_start.py`
+
+
+## 2026-07-20T06:00:30Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/hooks/session_start.py`
+
+
+## 2026-07-20T06:00:38Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/hooks/session_start.py`
+
+
+## 2026-07-20T06:00:49Z | feat/nanoGPTJAX@5caac7b | done | exec
+python3 -c "
+
+
+## 2026-07-20T06:00:54Z | feat/nanoGPTJAX@5caac7b | done | exec
+sed -n 1,60p scripts/tpu/deploy_tarball.sh
+
+
+## 2026-07-20T06:01:16Z | feat/nanoGPTJAX@5caac7b | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/skills/tpu-redeploy/SKILL.md`
+
+
+## 2026-07-20T06:01:31Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/skills/tpu-orchestrate/SKILL.md`
+
+
+## 2026-07-20T06:01:34Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-diagnoser.md`
+
+
+## 2026-07-20T06:01:43Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-diagnoser.md`
+
+
+## 2026-07-20T06:01:46Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-diagnoser.md`
+
+
+## 2026-07-20T06:02:02Z | feat/nanoGPTJAX@5caac7b | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/CLAUDE.md`
+

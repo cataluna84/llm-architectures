@@ -214,3 +214,7 @@ __marimo__/
 nanogpt/fineweb10B/
 _artifacts/
 *.bin
+
+# Rendered Mermaid output (.mmd sources are checked in)
+.claude/orchestration/diagrams/svg/
+.claude/orchestration/diagrams/png/
