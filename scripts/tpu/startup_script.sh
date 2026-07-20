@@ -36,10 +36,21 @@ echo "[startup] code=$CODE_TARBALL_URI  data-source=$DATA_SOURCE shards=$DATA_SH
 echo "[startup] total-train-steps=$TOTAL_TRAIN_STEPS per-device-bsz=${PER_DEVICE_BATCH_SIZE:-<default>} save-ckpt-dir=${SAVE_CKPT_DIR:-<none>}"
 
 # ----- 1. system deps -----
+# Retry loop: at boot, unattended-upgrades often holds the dpkg lock and the
+# Dpkg::Lock::Timeout option alone has been observed to lose the race (killed
+# startup on 2/16 v5e-64 workers via set -e). Never let apt be the reason a
+# worker misses the multi-host rendezvous.
 APT_OPTS=(-o Dpkg::Lock::Timeout=600)
-sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y -qq \
-    tmux git curl ca-certificates build-essential
+for _apt_try in $(seq 1 30); do
+    if sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" update -qq &&
+       sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y -qq \
+           tmux git curl ca-certificates build-essential; then
+        break
+    fi
+    echo "[startup] apt busy/failed (attempt $_apt_try/30); retrying in 30s"
+    sleep 30
+    [ "$_apt_try" -eq 30 ] && { echo "[startup] FATAL: apt never succeeded"; exit 1; }
+done
 
 # ----- 2. uv (pip fallback if astral.sh is unreachable) -----
 if ! command -v uv >/dev/null 2>&1; then

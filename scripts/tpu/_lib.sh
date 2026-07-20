@@ -26,6 +26,13 @@ load_env_file() {
     done < "$file"
 }
 
+# Push a short event line to ntfy.sh (subscribe at https://ntfy.sh/$NTFY_TOPIC
+# in any browser/phone). No-op when NTFY_TOPIC is unset; never fails the caller.
+notify() {
+    [ -n "${NTFY_TOPIC:-}" ] || return 0
+    curl -fsS -m 10 -d "$*" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null 2>&1 || true
+}
+
 # Tar the working tree (INCLUDING the gitignored .env — that is how WANDB_*
 # credentials reach the VM; git clones can never ship it), excluding VCS,
 # venvs, staged data, and caches. $1 = output tarball path, $2 = repo root.
