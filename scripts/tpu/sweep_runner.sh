@@ -43,10 +43,6 @@ vmssh() { # worker cmd
         --command="$2" 2>/dev/null
 }
 
-exit_count() {
-    vmssh 0 "grep -c 'train.py exited' /tmp/train.log" | tr -dc '0-9'
-}
-
 ready_workers() {
     timeout 240 gcloud compute tpus tpu-vm ssh "$NODE_ID" \
         --project="$PROJECT_ID" --zone="$ZONE" --worker=all --quiet \
@@ -76,24 +72,25 @@ run_no=0
 while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|\#*) continue ;; esac
     run_no=$(( run_no + 1 ))
+    tag="sweeprun${run_no}-$(date +%s)"
     echo ""
-    echo "[sweep $(_ts)] === run #$run_no: $line ==="
+    echo "[sweep $(_ts)] === run #$run_no tag=$tag: $line ==="
 
-    n0=$(exit_count); n0=${n0:-0}
-    if ! env $line ZONE="$ZONE" NODE_ID="$NODE_ID" \
+    if ! env $line ZONE="$ZONE" NODE_ID="$NODE_ID" RUN_TAG="$tag" \
          bash "$SCRIPT_DIR/deploy_tarball.sh" >>/tmp/sweep_deploy.log 2>&1; then
         echo "[sweep $(_ts)] ABORT: deploy failed for run #$run_no (see /tmp/sweep_deploy.log)"
         notify "sweep_runner ABORT: deploy failed on run #$run_no"
         exit 1
     fi
-    echo "[sweep $(_ts)] run #$run_no deployed; waiting for completion (ledger n0=$n0)"
+    echo "[sweep $(_ts)] run #$run_no deployed; waiting on log segment tag=$tag"
 
+    # Completion = "train.py exited" INSIDE this run's tag-scoped log segment.
+    # Never matches stale segments from earlier deploys/boots.
     deadline=$(( $(date +%s) + RUN_TIMEOUT_SECONDS ))
     while true; do
         sleep 60
-        n=$(exit_count); n=${n:-$n0}
-        if [ "$n" -gt "$n0" ]; then
-            seg=$(vmssh 0 "awk '/launching train.py/{m=NR} m && NR>=m' /tmp/train.log | grep -E 'Reached maximum training steps|Best loss|Traceback|DEADLINE_EXCEEDED' | head -4")
+        seg=$(vmssh 0 "awk -v t='tag=$tag' 'index(\$0, t){m=NR} m && NR>=m' /tmp/train.log | grep -E 'train.py exited|Reached maximum training steps|Best loss|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | head -6")
+        if echo "$seg" | grep -q "train.py exited"; then
             echo "[sweep $(_ts)] run #$run_no finished:"
             echo "$seg"
             if echo "$seg" | grep -q "Reached maximum training steps"; then

@@ -61,6 +61,10 @@ WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 WANDB_RUN_ID="${WANDB_RUN_ID:-}"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
+# Unique tag baked into the launcher's "launching train.py" log line so
+# orchestrators (sweep_runner.sh) can find THIS deploy's log segment
+# unambiguously — never a stale segment from an earlier run.
+RUN_TAG="${RUN_TAG:-deploy-$STAMP}"
 WORK="$(mktemp -d)"
 TARBALL="$WORK/llm-arch-code-$STAMP.tar.gz"
 GCS_URI="gs://$BUCKET/$CODE_PREFIX/llm-arch-code-$STAMP.tar.gz"
@@ -107,7 +111,7 @@ export NANOGPT_OTHER_PEAK_LR="$NANOGPT_OTHER_PEAK_LR"
 export NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="$NANOGPT_MUON_MOMENTUM_WARMUP_STEPS"
 ${WANDB_ENV_LINES}export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
-echo "[\$(date -Is)] launching train.py steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
+echo "[\$(date -Is)] launching train.py tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
 "\$UV" run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log
 echo "[\$(date -Is)] train.py exited with status \$?" | tee -a /tmp/train.log
 EOF
