@@ -46,6 +46,7 @@ Literature value: **0.01** — modded-nanogpt cautious weight decay
 |---|---|---|---|---|---|---|
 | [v5e64-cwd-000](https://wandb.ai/cataluna84/llm-architectures/runs/lcfl0zes) | 3.5965 | +0.0004 | +0.3σ | 1 | 0.23/0.23 | noise |
 | [v5e64-cwd-010](https://wandb.ai/cataluna84/llm-architectures/runs/4q17uo7i) | 3.5789 | -0.0172 | -10.6σ | 2 | 0.23/0.23 | MOVED |
+| [v5e64-cwd-020](https://wandb.ai/cataluna84/llm-architectures/runs/0dk9scqc) | 3.5733 | -0.0228 | -14.1σ | 1 | 0.23/0.23 | MOVED |
 
 ### emblr
 
@@ -55,6 +56,7 @@ Literature value: **0.2** — nanochat embedding_lr (Adam, width-scaled)
 |---|---|---|---|---|---|---|
 | [v5e64-emblr-010](https://wandb.ai/cataluna84/llm-architectures/runs/4iwm0ctf) | 3.6125 | +0.0164 | +10.2σ | 0 | 0.23/0.23 | WORSE |
 | [v5e64-emblr-030](https://wandb.ai/cataluna84/llm-architectures/runs/ilbfhbll) | 3.5892 | -0.0069 | -4.3σ | 0 | 0.23/0.23 | MOVED |
+| [v5e64-emblr-045](https://wandb.ai/cataluna84/llm-architectures/runs/qmbfh2ku) | 3.5882 | -0.0079 | -4.9σ | 0 | 0.23/0.23 | MOVED |
 
 ### lr
 
@@ -103,6 +105,7 @@ Literature value: **0.004** — nanochat unembedding_lr; most LR-sensitive group
 
 | run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
 |---|---|---|---|---|---|---|
+| [v5e64-unemb-001](https://wandb.ai/cataluna84/llm-architectures/runs/6a96cl1h) | 3.6165 | +0.0204 | +12.6σ | 0 | 0.23/0.23 | WORSE |
 | [v5e64-unemb-002](https://wandb.ai/cataluna84/llm-architectures/runs/oowm092c) | 3.5892 | -0.0069 | -4.3σ | 1 | 0.23/0.23 | MOVED |
 | [v5e64-unemb-008](https://wandb.ai/cataluna84/llm-architectures/runs/148ctrm4) | 3.6118 | +0.0157 | +9.7σ | 0 | 0.23/0.23 | WORSE |
 
@@ -126,8 +129,10 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-clip-20 | clip | finished | 0 | 3.5977 | https://wandb.ai/cataluna84/llm-architectures/runs/9iynic1g |
 | v5e64-cwd-000 | cwd | finished | 0 | 3.5965 | https://wandb.ai/cataluna84/llm-architectures/runs/lcfl0zes |
 | v5e64-cwd-010 | cwd | finished | 0 | 3.5789 | https://wandb.ai/cataluna84/llm-architectures/runs/4q17uo7i |
+| v5e64-cwd-020 | cwd | finished | 0 | 3.5733 | https://wandb.ai/cataluna84/llm-architectures/runs/0dk9scqc |
 | v5e64-emblr-010 | emblr | finished | 0 | 3.6125 | https://wandb.ai/cataluna84/llm-architectures/runs/4iwm0ctf |
 | v5e64-emblr-030 | emblr | finished | 0 | 3.5892 | https://wandb.ai/cataluna84/llm-architectures/runs/ilbfhbll |
+| v5e64-emblr-045 | emblr | finished | 0 | 3.5882 | https://wandb.ai/cataluna84/llm-architectures/runs/qmbfh2ku |
 | v5e64-lrsweep-014 | lr | finished | 0 | 3.6186 | https://wandb.ai/cataluna84/llm-architectures/runs/6iw13r57 |
 | v5e64-lrsweep-020 | lr | finished | 0 | 3.5952 | https://wandb.ai/cataluna84/llm-architectures/runs/wfmgz5e4 |
 | v5e64-lrsweep-020-s1 | lr | finished | 1 | 3.5979 | https://wandb.ai/cataluna84/llm-architectures/runs/jt7z58vw |
@@ -141,6 +146,7 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-momwu-100 | momwu | finished | 0 | 3.6103 | https://wandb.ai/cataluna84/llm-architectures/runs/moubvg1a |
 | v5e64-momwu-600 | momwu | finished | 0 | 3.6063 | https://wandb.ai/cataluna84/llm-architectures/runs/aasjekxp |
 | v5e64-mudtype-bf16 | mudtype | finished | 0 | 3.5929 | https://wandb.ai/cataluna84/llm-architectures/runs/cx05qvkn |
+| v5e64-unemb-001 | unemb | finished | 0 | 3.6165 | https://wandb.ai/cataluna84/llm-architectures/runs/6a96cl1h |
 | v5e64-unemb-002 | unemb | finished | 0 | 3.5892 | https://wandb.ai/cataluna84/llm-architectures/runs/oowm092c |
 | v5e64-unemb-008 | unemb | finished | 0 | 3.6118 | https://wandb.ai/cataluna84/llm-architectures/runs/148ctrm4 |
 | v5e64-warmup-100 | warmup | finished | 0 | 3.6086 | https://wandb.ai/cataluna84/llm-architectures/runs/08qlfo44 |
