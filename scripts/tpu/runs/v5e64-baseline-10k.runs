@@ -1,0 +1,17 @@
+# Full pretraining baseline on v5e-64 — 10,000 steps.
+#
+# 10,000 x 524,288 = 5.24B tokens (~29 tokens/param at ~181M params, above
+# Chinchilla 20x). At the measured 0.23 s/step that is ~40 min of train time.
+#
+# RUN_TIMEOUT_SECONDS=5400 (90 min): 40 min train + compile + deploy + slack
+# for one preemption recovery. The 3600s default is too tight here.
+#
+# WANDB_RUN_ID is FIXED so a preemption reboot rejoins this same W&B run
+# instead of forking a second one. SAVE_CKPT_DIR + resume=auto (the boot
+# default) are what make that recovery possible at all — without checkpoints
+# there is nothing to resume from.
+#
+# Only set NANOGPT_OTHER_PEAK_LR / NANOGPT_MUON_MOMENTUM_WARMUP_STEPS here if
+# the completed sweep overturns the defaults (peak 0.02, warmup 300).
+
+TOTAL_TRAIN_STEPS=10000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=5400 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-baseline-10k WANDB_RUN_NAME=v5e64-baseline-10k WANDB_RUN_ID=v5e64-baseline-10k-r1
