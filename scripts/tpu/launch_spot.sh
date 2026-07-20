@@ -41,8 +41,17 @@ case "$TRC_PROFILE" in
         DEFAULT_QR="nanogpt-v6e16-qr"
         DEFAULT_NODE="nanogpt-v6e16"
         ;;
+    v5e-64-ew4b)
+        # MULTI-HOST: 8 hosts x 8 chips. train.py must be multi-host-ready
+        # (jax.distributed + per-host data feeding) before this can train.
+        ACCEL_TYPE="${ACCEL_TYPE:-v5litepod-64}"
+        ZONE="${ZONE:-europe-west4-b}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv5-lite}"
+        DEFAULT_QR="nanogpt-v5e64-qr"
+        DEFAULT_NODE="nanogpt-v5e64"
+        ;;
     *)
-        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-8-us, v6e-16-eu)" >&2
+        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-8-us, v6e-16-eu, v5e-64-ew4b)" >&2
         exit 2
         ;;
 esac
