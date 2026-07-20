@@ -38,6 +38,16 @@ Literature value: **1.0** — GPT-3 lineage global-norm clip
 | [v5e64-clip-05](https://wandb.ai/cataluna84/llm-architectures/runs/xkq0fc3j) | 3.5908 | -0.0053 | -3.3σ | 1 | 0.23/0.23 | MOVED |
 | [v5e64-clip-20](https://wandb.ai/cataluna84/llm-architectures/runs/9iynic1g) | 3.5977 | +0.0016 | +1.0σ | 1 | 0.23/0.23 | noise |
 
+### composed
+
+Literature value: **?** — ?
+
+| run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
+|---|---|---|---|---|---|---|
+| [v5e64-composed-s0](https://wandb.ai/cataluna84/llm-architectures/runs/zgh4g5k7) | 3.5664 | -0.0296 | -18.3σ | 1 | 0.23/0.23 | MOVED |
+| [v5e64-composed-s1](https://wandb.ai/cataluna84/llm-architectures/runs/9dxcued0) | 3.5675 | -0.0286 | -17.7σ | 1 | 0.23/0.23 | MOVED |
+| [v5e64-composed-s2](https://wandb.ai/cataluna84/llm-architectures/runs/lepkv0b4) | 3.5673 | -0.0287 | -17.8σ | 2 | 0.23/0.23 | MOVED |
+
 ### cwd
 
 Literature value: **0.01** — modded-nanogpt cautious weight decay
@@ -83,6 +93,16 @@ Literature value: **0.02** — nanochat matrix_lr; Muon README (muP-scaled)
 | [v5e64-lrsweep-028-s1](https://wandb.ai/cataluna84/llm-architectures/runs/7r2vfi0j) | 3.5982 | +0.0021 | +1.3σ | — | 0.23/0.23 | noise |
 | [v5e64-lrsweep-028-s2](https://wandb.ai/cataluna84/llm-architectures/runs/9yyw9sie) | 3.5982 | +0.0021 | +1.3σ | — | 0.23/0.23 | noise |
 
+### lr-horizon
+
+Literature value: **LR* ~ D^-0.32** — Scaling Optimal LR Across Token Horizons (ICLR'25)
+
+| run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
+|---|---|---|---|---|---|---|
+| [v5e64-h2500-014](https://wandb.ai/cataluna84/llm-architectures/runs/2956holg) | 3.3675 | -0.2286 | -141.5σ | 0 | 0.23/0.23 | MOVED |
+| [v5e64-h2500-020](https://wandb.ai/cataluna84/llm-architectures/runs/7mpbugvs) | 3.3568 | -0.2392 | -148.1σ | 1 | 0.23/0.23 | MOVED |
+| [v5e64-h2500-028](https://wandb.ai/cataluna84/llm-architectures/runs/tkhk744o) | 3.3563 | -0.2397 | -148.4σ | 2 | 0.23/0.23 | MOVED |
+
 ### mommax
 
 Literature value: **0.95** — Muon README: 'defaults work well'
@@ -109,6 +129,24 @@ Literature value: **float32** — repo default Muon momentum buffer
 | run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
 |---|---|---|---|---|---|---|
 | [v5e64-mudtype-bf16](https://wandb.ai/cataluna84/llm-architectures/runs/cx05qvkn) | 3.5929 | -0.0032 | -2.0σ | 1 | 0.22/0.23 | noise |
+
+### ns
+
+Literature value: **5** — Muon README / Newton-Schulz writeup
+
+| run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
+|---|---|---|---|---|---|---|
+| [v5e64-ns-3](https://wandb.ai/cataluna84/llm-architectures/runs/pqnx7kb4) | 3.6339 | +0.0379 | +23.4σ | 1 | 0.22/0.22 | WORSE |
+| [v5e64-ns-7](https://wandb.ai/cataluna84/llm-architectures/runs/4wkmxu7m) | 3.5953 | -0.0008 | -0.5σ | 3 | 0.24/0.24 | noise |
+
+### schedule
+
+Literature value: **cosine (repo) vs WSD 0.65-0.85** — nanochat Run 7 trapezoid
+
+| run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
+|---|---|---|---|---|---|---|
+| [v5e64-wsd-065](https://wandb.ai/cataluna84/llm-architectures/runs/tvanjvwm) | 3.3230 | -0.2731 | -169.1σ | 1 | 0.23/0.23 | MOVED |
+| [v5e64-wsd-085](https://wandb.ai/cataluna84/llm-architectures/runs/mf6l8ocg) | 3.3343 | -0.2618 | -162.1σ | 1 | 0.23/0.23 | MOVED |
 
 ### unemb
 
@@ -138,6 +176,9 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-b2-099 | adamb | finished | 0 | 3.5952 | https://wandb.ai/cataluna84/llm-architectures/runs/hajp536c |
 | v5e64-clip-05 | clip | finished | 0 | 3.5908 | https://wandb.ai/cataluna84/llm-architectures/runs/xkq0fc3j |
 | v5e64-clip-20 | clip | finished | 0 | 3.5977 | https://wandb.ai/cataluna84/llm-architectures/runs/9iynic1g |
+| v5e64-composed-s0 | composed | finished | 0 | 3.5664 | https://wandb.ai/cataluna84/llm-architectures/runs/zgh4g5k7 |
+| v5e64-composed-s1 | composed | finished | 1 | 3.5675 | https://wandb.ai/cataluna84/llm-architectures/runs/9dxcued0 |
+| v5e64-composed-s2 | composed | finished | 2 | 3.5673 | https://wandb.ai/cataluna84/llm-architectures/runs/lepkv0b4 |
 | v5e64-cwd-000 | cwd | finished | 0 | 3.5965 | https://wandb.ai/cataluna84/llm-architectures/runs/lcfl0zes |
 | v5e64-cwd-010 | cwd | finished | 0 | 3.5789 | https://wandb.ai/cataluna84/llm-architectures/runs/4q17uo7i |
 | v5e64-cwd-020 | cwd | finished | 0 | 3.5733 | https://wandb.ai/cataluna84/llm-architectures/runs/0dk9scqc |
@@ -155,12 +196,19 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-lrsweep-028 | lr | finished | 0 | 3.5983 | https://wandb.ai/cataluna84/llm-architectures/runs/lf9e64ok |
 | v5e64-lrsweep-028-s1 | lr | finished | 1 | 3.5982 | https://wandb.ai/cataluna84/llm-architectures/runs/7r2vfi0j |
 | v5e64-lrsweep-028-s2 | lr | finished | 2 | 3.5982 | https://wandb.ai/cataluna84/llm-architectures/runs/9yyw9sie |
+| v5e64-h2500-014 | lr-horizon | finished | 0 | 3.3675 | https://wandb.ai/cataluna84/llm-architectures/runs/2956holg |
+| v5e64-h2500-020 | lr-horizon | finished | 0 | 3.3568 | https://wandb.ai/cataluna84/llm-architectures/runs/7mpbugvs |
+| v5e64-h2500-028 | lr-horizon | finished | 0 | 3.3563 | https://wandb.ai/cataluna84/llm-architectures/runs/tkhk744o |
 | v5e64-mommax-090 | mommax | finished | 0 | 3.6287 | https://wandb.ai/cataluna84/llm-architectures/runs/eyilehl6 |
 | v5e64-mommax-098 | mommax | finished | 0 | 3.5962 | https://wandb.ai/cataluna84/llm-architectures/runs/nsssxnjb |
 | v5e64-lrsweep-020-nomom | momwu | finished | 0 | 3.6322 | https://wandb.ai/cataluna84/llm-architectures/runs/x4afhf4g |
 | v5e64-momwu-100 | momwu | finished | 0 | 3.6103 | https://wandb.ai/cataluna84/llm-architectures/runs/moubvg1a |
 | v5e64-momwu-600 | momwu | finished | 0 | 3.6063 | https://wandb.ai/cataluna84/llm-architectures/runs/aasjekxp |
 | v5e64-mudtype-bf16 | mudtype | finished | 0 | 3.5929 | https://wandb.ai/cataluna84/llm-architectures/runs/cx05qvkn |
+| v5e64-ns-3 | ns | finished | 0 | 3.6339 | https://wandb.ai/cataluna84/llm-architectures/runs/pqnx7kb4 |
+| v5e64-ns-7 | ns | finished | 0 | 3.5953 | https://wandb.ai/cataluna84/llm-architectures/runs/4wkmxu7m |
+| v5e64-wsd-065 | schedule | finished | 0 | 3.3230 | https://wandb.ai/cataluna84/llm-architectures/runs/tvanjvwm |
+| v5e64-wsd-085 | schedule | finished | 0 | 3.3343 | https://wandb.ai/cataluna84/llm-architectures/runs/mf6l8ocg |
 | v5e64-unemb-001 | unemb | finished | 0 | 3.6165 | https://wandb.ai/cataluna84/llm-architectures/runs/6a96cl1h |
 | v5e64-unemb-002 | unemb | finished | 0 | 3.5892 | https://wandb.ai/cataluna84/llm-architectures/runs/oowm092c |
 | v5e64-unemb-008 | unemb | finished | 0 | 3.6118 | https://wandb.ai/cataluna84/llm-architectures/runs/148ctrm4 |
