@@ -25,9 +25,12 @@ def _env_float(name: str, default: float) -> float:
     return float(val) if val else default
 
 
-def _env_float(name: str, default: float) -> float:
+def _env_resume(name: str) -> int | str:
+    """Resume step: an int, or "auto" = latest checkpoint under the save dir."""
     val = os.environ.get(name)
-    return float(val) if val else default
+    if not val:
+        return 0
+    return "auto" if val.strip().lower() == "auto" else int(val)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -283,9 +286,10 @@ class CheckpointConfig:
     max_checkpoints_to_keep: int = 5
     checkpoint_save_steps: int = 100
     # Resume step for spot-preemption recovery (env: NANOGPT_RESUME_FROM_STEP).
-    # Points at a step saved under save_ckpt_dir/<run_name>/; 0 = fresh start.
-    last_checkpoint_step: int = dataclasses.field(
-        default_factory=lambda: _env_int("NANOGPT_RESUME_FROM_STEP", 0)
+    # An int step under save_ckpt_dir/<run_name>/, "auto" = latest saved step
+    # (used by the boot path so preemption reboots self-heal), 0 = fresh start.
+    last_checkpoint_step: int | str = dataclasses.field(
+        default_factory=lambda: _env_resume("NANOGPT_RESUME_FROM_STEP")
     )
     # Directory where checkpoints will be saved (env: NANOGPT_SAVE_CKPT_DIR;
     # may be a gs:// path when running on TPU).

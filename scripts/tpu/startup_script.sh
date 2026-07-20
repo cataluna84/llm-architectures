@@ -30,6 +30,13 @@ GCS_DATA_URI="$(read_meta gcs-data-uri '')"
 TOTAL_TRAIN_STEPS="$(read_meta total-train-steps 50)"
 PER_DEVICE_BATCH_SIZE="$(read_meta per-device-batch-size '')"
 SAVE_CKPT_DIR="$(read_meta save-ckpt-dir '')"
+# Self-healing/full-run identity (empty values are harmless: config env
+# helpers and init_wandb treat empty as unset).
+RESUME_FROM_STEP="$(read_meta resume-from-step auto)"
+WANDB_RUN_NAME_META="$(read_meta wandb-run-name '')"
+WANDB_RUN_ID_META="$(read_meta wandb-run-id '')"
+VAL_MAX_BATCHES_META="$(read_meta val-max-batches '')"
+DEVICE_PEAK_FLOPS_META="$(read_meta device-peak-flops '')"
 TMUX_SESSION="${TMUX_SESSION:-train}"
 
 echo "[startup] code=$CODE_TARBALL_URI  data-source=$DATA_SOURCE shards=$DATA_SHARDS"
@@ -111,6 +118,11 @@ tmux new-session -d -s "$TMUX_SESSION" "
     export NANOGPT_TOTAL_TRAIN_STEPS='$TOTAL_TRAIN_STEPS'
     export NANOGPT_PER_DEVICE_BATCH_SIZE='${PER_DEVICE_BATCH_SIZE}'
     export NANOGPT_SAVE_CKPT_DIR='${SAVE_CKPT_DIR}'
+    export NANOGPT_RESUME_FROM_STEP='${RESUME_FROM_STEP}'
+    export WANDB_RUN_NAME='${WANDB_RUN_NAME_META}'
+    export WANDB_RUN_ID='${WANDB_RUN_ID_META}'
+    export NANOGPT_VAL_MAX_BATCHES='${VAL_MAX_BATCHES_META}'
+    export NANOGPT_DEVICE_PEAK_FLOPS='${DEVICE_PEAK_FLOPS_META}'
     export PYTHONUNBUFFERED=1
     echo \"[\$(date -Is)] launching nanogpt/train.py on \$(python -c 'import jax;print(jax.devices())' 2>/dev/null)\" | tee -a /tmp/train.log
     '$UV' run python -u nanogpt/train.py 2>&1 | tee -a /tmp/train.log

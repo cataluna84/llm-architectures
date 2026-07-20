@@ -51,6 +51,14 @@ TOTAL_TRAIN_STEPS="${TOTAL_TRAIN_STEPS:-50}"
 # the desired token batch is preserved via gradient accumulation. Raise carefully.
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
 SAVE_CKPT_DIR="${SAVE_CKPT_DIR:-}"                    # empty = don't save (smoke)
+# Full-run self-healing: with these in boot metadata, a spot-preemption reboot
+# re-runs startup_script.sh, auto-resumes from the latest GCS checkpoint, and
+# continues the SAME W&B run. resume=auto is a no-op when SAVE_CKPT_DIR is unset.
+RESUME_FROM_STEP="${RESUME_FROM_STEP:-auto}"
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
+WANDB_RUN_ID="${WANDB_RUN_ID:-}"
+NANOGPT_VAL_MAX_BATCHES="${NANOGPT_VAL_MAX_BATCHES:-}"
+NANOGPT_DEVICE_PEAK_FLOPS="${NANOGPT_DEVICE_PEAK_FLOPS:-}"
 
 STARTUP_SCRIPT="$SCRIPT_DIR/startup_script.sh"
 [ -f "$STARTUP_SCRIPT" ] || { echo "ERROR: $STARTUP_SCRIPT not found" >&2; exit 1; }
@@ -79,6 +87,11 @@ metadata_pairs+=",data-source=$DATA_SOURCE,data-shards=$DATA_SHARDS,gcs-data-uri
 metadata_pairs+=",total-train-steps=$TOTAL_TRAIN_STEPS"
 [ -n "$PER_DEVICE_BATCH_SIZE" ] && metadata_pairs+=",per-device-batch-size=$PER_DEVICE_BATCH_SIZE"
 [ -n "$SAVE_CKPT_DIR" ] && metadata_pairs+=",save-ckpt-dir=$SAVE_CKPT_DIR"
+metadata_pairs+=",resume-from-step=$RESUME_FROM_STEP"
+[ -n "$WANDB_RUN_NAME" ] && metadata_pairs+=",wandb-run-name=$WANDB_RUN_NAME"
+[ -n "$WANDB_RUN_ID" ] && metadata_pairs+=",wandb-run-id=$WANDB_RUN_ID"
+[ -n "$NANOGPT_VAL_MAX_BATCHES" ] && metadata_pairs+=",val-max-batches=$NANOGPT_VAL_MAX_BATCHES"
+[ -n "$NANOGPT_DEVICE_PEAK_FLOPS" ] && metadata_pairs+=",device-peak-flops=$NANOGPT_DEVICE_PEAK_FLOPS"
 
 echo "==> creating Queued Resource"
 echo "    project:      $PROJECT_ID"

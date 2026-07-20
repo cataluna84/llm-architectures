@@ -414,9 +414,13 @@ def main():
     segment_ids = None
     resume_from_step = cfg.ckpt_cfg.last_checkpoint_step
 
-    if resume_from_step > 0 and mngr is None:
+    if resume_from_step and mngr is None:
         print("NANOGPT_RESUME_FROM_STEP set but no save_ckpt_dir — ignoring resume.")
         resume_from_step = 0
+    if resume_from_step == "auto":
+        # Latest saved step per orbax's own listing (works on gs://); 0 = fresh.
+        resume_from_step = mngr.latest_step() or 0
+        print(f"Auto-resume: latest checkpoint step = {resume_from_step or 'none'}")
     if resume_from_step > 0:
         # Checkpoints live under ckpt_path (save_ckpt_dir / run_name), and
         # epath.exists() works for both local and gs:// paths.
