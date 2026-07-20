@@ -266,3 +266,71 @@ edited `/home/cataluna84/Workspace/llm-architectures/.claude/agents/tpu-diagnose
 ## 2026-07-20T06:02:02Z | feat/nanoGPTJAX@5caac7b | done | edit
 edited `/home/cataluna84/Workspace/llm-architectures/CLAUDE.md`
 
+
+## 2026-07-20T06:02:36Z | feat/nanoGPTJAX@1a158e8 | done | exec
+git add docs/tpu-trc-allocation.md docs/tpu-capacity-log.md && git commit -q -F - <<'EOF'
+
+
+## 2026-07-20T06:03:12Z | feat/nanoGPTJAX@1a158e8 | done | exec
+sed -n 60,130p scripts/tpu/deploy_tarball.sh
+
+
+## 2026-07-20T06:03:34Z | feat/nanoGPTJAX@1a158e8 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T06:03:42Z | feat/nanoGPTJAX@1a158e8 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T06:03:49Z | feat/nanoGPTJAX@1a158e8 | done | exec
+sed -n 12,45p scripts/tpu/startup_script.sh
+
+
+## 2026-07-20T06:03:56Z | feat/nanoGPTJAX@1a158e8 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/startup_script.sh`
+
+
+## 2026-07-20T06:03:59Z | feat/nanoGPTJAX@1a158e8 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/startup_script.sh`
+
+
+## 2026-07-20T06:04:04Z | feat/nanoGPTJAX@1a158e8 | done | exec
+sed -n 78,96p scripts/tpu/launch_qr.sh
+
+
+## 2026-07-20T06:04:11Z | feat/nanoGPTJAX@1a158e8 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/launch_qr.sh`
+
+
+## 2026-07-20T06:04:32Z | feat/nanoGPTJAX@1a158e8 | done | exec
+SCRATCH=/tmp/claude-1000/-home-cataluna84-Workspace-llm-architectures/2e5dfab4-633d-4ccd-b3ae-1936a9d6e26a/scratchpad
+
+
+## 2026-07-20T06:04:45Z | feat/nanoGPTJAX@5a14a04 | done | exec
+git add -A scripts/tpu && git commit -q -F - <<'EOF'
+
+
+## 2026-07-20T06:05:06Z | feat/nanoGPTJAX@5a14a04 | done | exec
+TAG="sweeprun1-1784525554"
+
+
+## 2026-07-20T06:06:10Z | feat/nanoGPTJAX@5a14a04 | done | edit
+created `/tmp/claude-1000/-home-cataluna84-Workspace-llm-architectures/2e5dfab4-633d-4ccd-b3ae-1936a9d6e26a/scratchpad/sweep_runner.sh`
+
+
+## 2026-07-20T06:06:19Z | feat/nanoGPTJAX@5a14a04 | done | exec
+SCRATCH=/tmp/claude-1000/-home-cataluna84-Workspace-llm-architectures/2e5dfab4-633d-4ccd-b3ae-1936a9d6e26a/scratchpad
+
+
+## 2026-07-20T06:06:31Z | feat/nanoGPTJAX@5a14a04 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/memories.md`
+
+
+## 2026-07-20T06:06:40Z | feat/nanoGPTJAX@5a14a04 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/.claude/memories.md`
+
+
+## 2026-07-20T06:06:58Z | feat/nanoGPTJAX@5a14a04 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/.claude/PLAN.md`
+

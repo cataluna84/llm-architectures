@@ -4,6 +4,18 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
 
 ## Operational gotchas (transferred from tinyaya-stage2-scale, battle-tested)
 
+- **Never filter rare status markers and repeating lines through one bounded
+  pipe.** `sweep_runner.sh` matched `grep -E 'exited|Best loss|...' | head -6`;
+  a 1000-step run emits one `Best loss` per shard boundary, so six of them ate
+  the entire head budget and the exit marker never appeared. A finished run went
+  undetected for an hour (2026-07-20) while a 64-chip slice sat idle. Read rare
+  markers from the **tail**, and fetch repeating lines in a *separate* query.
+  General form: **the watcher was wrong, not the run** — always confirm against
+  the source of truth on the VM before concluding a run is stuck.
+- **Editing a shell script while bash is executing it is unsafe.** Bash reads a
+  script incrementally by byte offset; rewriting it under a running process can
+  make it resume mid-line and execute garbage. Stage the new version elsewhere
+  and install it once the process exits.
 - **Killed `gcloud ssh` ≠ killed remote command.** A local `timeout` on ssh
   orphans the remote process (two orphaned stagers once filled a root disk).
   Long host operations go in detached tmux (or `nohup … &`) with a liveness
@@ -21,6 +33,22 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
   after it killed 2/16 v5e-64 workers and broke the multi-host rendezvous).
 
 ## Project decisions (llm-architectures / nanoGPT-JAX)
+
+- **2026-07-20: orchestration design lives in `.claude/orchestration/`** and is
+  **repo-level, not nanoGPT-specific** (user directive — `llm-architectures` is
+  the repo; nanoGPT-JAX is its first architecture). New architectures add a
+  `playbook/baseline-*.md` rather than editing the spec. Two policies were
+  deliberately inverted from the tinyaya original: **T3 auto-recycles** (qr_watch
+  resubmits, bounded) and **check-ins are push-only** (ntfy, nothing blocks).
+- **2026-07-20: the stage entrypoint is `NANOGPT_ENTRYPOINT`** (default
+  `nanogpt/train.py`), carried in launcher log markers and QR metadata, so the
+  same deploy/supervise/self-heal machinery drives pretraining, SFT, and later
+  reps. Orchestrators match the stage-agnostic substring `exited with status`,
+  which also matches every log line the pre-2026-07-20 launcher wrote.
+- **Duplicate reference tables drift.** tinyaya kept its diagnosis table in both
+  the playbook and the diagnoser agent; they diverged. Here the table is
+  canonical in `.claude/agents/tpu-diagnoser.md` and the playbook only points
+  at it.
 
 - **2026-07-20: v5e-64 throughput baseline (bsz 4/chip, accum 1):**
   0.23 s/step, 2.32M tokens/s, 25.5% MFU — 4.3× the v6e-8 (0.98 s/step,
