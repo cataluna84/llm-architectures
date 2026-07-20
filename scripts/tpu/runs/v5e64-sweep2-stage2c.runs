@@ -1,0 +1,15 @@
+# Sweep v2, Stage 2c — structural axes (4 runs). NON-BLOCKING for the 10k:
+# results inform the report and the next long run, not this one.
+#
+#  - ns_steps {3,7}: Newton-Schulz iterations, run in bf16 on TPU — a genuine
+#    hardware-sensitivity axis (convergence of the orthogonalization vs
+#    per-step cost; the only knob expected to move throughput).
+#  - wsd {0.65,0.85}: nanochat's trapezoid schedule vs our cosine, at 2500
+#    steps where the warmdown shape has room to matter (their Run 7:
+#    warmdown-ratio 0.85 + final-lr 0 beat the default). Compare against
+#    v5e64-h2500-020 (cosine) from stage 3.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_NS_STEPS=3 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=ns WANDB_RUN_NAME=v5e64-ns-3
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_NS_STEPS=7 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=ns WANDB_RUN_NAME=v5e64-ns-7
+TOTAL_TRAIN_STEPS=2500 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=2700 NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.65 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=schedule WANDB_RUN_NAME=v5e64-wsd-065
+TOTAL_TRAIN_STEPS=2500 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=2700 NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.85 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=schedule WANDB_RUN_NAME=v5e64-wsd-085

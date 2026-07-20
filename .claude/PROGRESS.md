@@ -985,3 +985,43 @@ cd /home/cataluna84/Workspace/llm-architectures
 ## 2026-07-20T09:44:42Z | feat/nanoGPTJAX@9256fd6 | done | exec
 cd /home/cataluna84/Workspace/llm-architectures
 
+
+## 2026-07-20T09:45:23Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T09:45:49Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T09:46:03Z | feat/nanoGPTJAX@4c83a59 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage2b.runs`
+
+
+## 2026-07-20T09:46:20Z | feat/nanoGPTJAX@4c83a59 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage2d.runs`
+
+
+## 2026-07-20T09:46:30Z | feat/nanoGPTJAX@4c83a59 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage2c.runs`
+
+
+## 2026-07-20T09:46:45Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T09:47:01Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T09:47:18Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T09:48:06Z | feat/nanoGPTJAX@4c83a59 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/sweep_report.py`
+
+
+## 2026-07-20T09:48:20Z | feat/nanoGPTJAX@4c83a59 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
