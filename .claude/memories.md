@@ -4,6 +4,14 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
 
 ## Operational gotchas (transferred from tinyaya-stage2-scale, battle-tested)
 
+- **`$(...)` in the same line as `$?` destroys the exit status.** In
+  `echo "[$(date -Is)] exited with status $?"` bash runs the substitution while
+  expanding the line, resetting `$?` to `date`'s status — so the launcher
+  reported `status 0` for *every* run, including fatal tracebacks, until
+  2026-07-20. Capture `rc=$?` on its own line immediately after the command.
+  Generalization: any status/marker a watcher trusts must be proven to change
+  when the thing it describes fails. An indicator that is always green is worse
+  than no indicator.
 - **Never filter rare status markers and repeating lines through one bounded
   pipe.** `sweep_runner.sh` matched `grep -E 'exited|Best loss|...' | head -6`;
   a 1000-step run emits one `Best loss` per shard boundary, so six of them ate

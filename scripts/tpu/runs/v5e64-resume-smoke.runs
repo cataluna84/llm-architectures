@@ -1,0 +1,23 @@
+# Resume half of the checkpoint smoke. Run AFTER v5e64-ckpt-smoke.runs has
+# written a checkpoint at step 100.
+#
+# Same SAVE_CKPT_DIR, NANOGPT_RESUME_FROM_STEP=auto, and a higher step count so
+# there is work left to do after resuming. Expected in /tmp/train.log:
+#
+#   Auto-resume: latest checkpoint step = 100
+#   Resumed from checkpoint at step 100
+#   ... training proceeds 100 -> 140, NOT 0 -> 140
+#
+# This is the check that the T3 auto-recycle policy depends on: a preempted
+# node reboots, re-fetches code, and resumes rather than silently restarting
+# from scratch. A run that restarts at 0 looks healthy in the logs and quietly
+# throws away hours.
+#
+# NOTE: the on-disk checkpoint directory is <SAVE_CKPT_DIR>/<model_run_name>,
+# and model_run_name is derived from ARCHITECTURE only
+# (gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L) — not the run name, LR, or step
+# count. Two runs of the same architecture that share a SAVE_CKPT_DIR will
+# therefore share checkpoints and can resume from each other. Always give each
+# training run its own SAVE_CKPT_DIR.
+
+TOTAL_TRAIN_STEPS=140 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=1800 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-ckpt-smoke NANOGPT_RESUME_FROM_STEP=auto WANDB_RUN_NAME=v5e64-resume-smoke

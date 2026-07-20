@@ -79,6 +79,33 @@ accum=1 versus accum=8 numerics at identical tokens/step.
 Caveat: `v6e8-lrsweep-020` predates the empty-`WANDB_RUN_ID` fix and exists only
 in console logs, so the v6e-8 column is not fully reproducible from W&B.
 
+## Checkpoint + resume (verified 2026-07-20)
+
+The preemption self-heal path the T3 auto-recycle policy depends on is proven
+end to end on this slice, not assumed:
+
+- **Write**: 135 objects under
+  `<SAVE_CKPT_DIR>/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/100/`, including
+  `commit_success.txt` (orbax writes it last, so its presence means the save
+  completed rather than partially failed).
+- **Multi-host**: `ds/process_0-of-16.json` … `process_15-of-16.json` — all 16
+  hosts participated. This is the failure mode worth fearing: orbax saves are
+  collective, so a host missing from the barrier *hangs* the run instead of
+  raising.
+- **Resume**: `NANOGPT_RESUME_FROM_STEP=auto` logged
+  `Auto-resume: latest checkpoint step = 100` / `Resumed from checkpoint at
+  step 100` and trained 100 -> 140.
+
+Re-run `runs/v5e64-ckpt-smoke.runs` then `runs/v5e64-resume-smoke.runs`
+(~6 min total) after any change to checkpointing, the mesh, or the host count.
+A failed resume does not announce itself — a run that silently restarts at 0
+looks healthy in the logs and quietly discards hours.
+
+Checkpoint dirs are keyed by **architecture only**
+(`model_run_name`: no run name, LR, or step count), so two runs of the same
+architecture sharing a `SAVE_CKPT_DIR` will share checkpoints and can resume
+from each other. Give every training run its own `SAVE_CKPT_DIR`.
+
 ## Regression triggers
 
 - Step time > ~0.46 s (2× baseline) sustained — but rule out a recompile marker,
