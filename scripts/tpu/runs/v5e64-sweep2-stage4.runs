@@ -1,0 +1,20 @@
+# Sweep v2, Stage 4 — composed winner x 3 seeds (1000 steps).
+#
+# Composition of every axis that beat its literature default by >2sigma,
+# each individually locked by bracketing:
+#   embedding_lr    0.2  -> 0.3   (-4.3s; 0.45 flat -> conservative end)
+#   unembedding_lr  0.004 -> 0.002 (-4.3s; sharp valley, 0.001 regresses)
+#   cautious_wd     0.01 -> 0.2   (-14.3s; 0.4 regresses -> interior optimum)
+#   grad_clip       1.0  -> 0.5   (-3.3s)
+# Unchanged: LR 0.02, momentum warmup 0.85->0.95/300, betas, warmup 1%.
+#
+# One-factor wins need not compose (all four touch update/decay scaling), so
+# the composed config must beat the BASELINE MEAN (3.5961) by more than the
+# SUM check is not required — the gate is: composed mean over 3 seeds beats
+# the best single knob (cwd-020, 3.5733) or at least matches it within 2s
+# while no seed regresses past baseline. Anything worse -> drop knobs in
+# reverse order of their solo margin and re-test.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=composed WANDB_RUN_NAME=v5e64-composed-s0
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=1 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=composed WANDB_RUN_NAME=v5e64-composed-s1
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=2 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=composed WANDB_RUN_NAME=v5e64-composed-s2

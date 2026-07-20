@@ -47,6 +47,7 @@ Literature value: **0.01** — modded-nanogpt cautious weight decay
 | [v5e64-cwd-000](https://wandb.ai/cataluna84/llm-architectures/runs/lcfl0zes) | 3.5965 | +0.0004 | +0.3σ | 1 | 0.23/0.23 | noise |
 | [v5e64-cwd-010](https://wandb.ai/cataluna84/llm-architectures/runs/4q17uo7i) | 3.5789 | -0.0172 | -10.6σ | 2 | 0.23/0.23 | MOVED |
 | [v5e64-cwd-020](https://wandb.ai/cataluna84/llm-architectures/runs/0dk9scqc) | 3.5733 | -0.0228 | -14.1σ | 1 | 0.23/0.23 | MOVED |
+| [v5e64-cwd-040](https://wandb.ai/cataluna84/llm-architectures/runs/n7alktpj) | 3.5801 | -0.0160 | -9.9σ | 2 | 0.23/0.23 | MOVED |
 
 ### emblr
 
@@ -57,6 +58,16 @@ Literature value: **0.2** — nanochat embedding_lr (Adam, width-scaled)
 | [v5e64-emblr-010](https://wandb.ai/cataluna84/llm-architectures/runs/4iwm0ctf) | 3.6125 | +0.0164 | +10.2σ | 0 | 0.23/0.23 | WORSE |
 | [v5e64-emblr-030](https://wandb.ai/cataluna84/llm-architectures/runs/ilbfhbll) | 3.5892 | -0.0069 | -4.3σ | 0 | 0.23/0.23 | MOVED |
 | [v5e64-emblr-045](https://wandb.ai/cataluna84/llm-architectures/runs/qmbfh2ku) | 3.5882 | -0.0079 | -4.9σ | 0 | 0.23/0.23 | MOVED |
+
+### failenv
+
+Literature value: **n/a — deliberate breakage** — failure-envelope mapping
+
+| run | best val | Δ vs baseline | Δ/σ | spikes | p50/p99 s | verdict |
+|---|---|---|---|---|---|---|
+| [v5e64-fail-lr056](https://wandb.ai/cataluna84/llm-architectures/runs/f1a6yun9) | 3.6369 | +0.0409 | +25.3σ | 2 | 0.23/0.23 | WORSE |
+| [v5e64-fail-mom099](https://wandb.ai/cataluna84/llm-architectures/runs/v2tunzt8) | 3.8241 | +0.2281 | +141.2σ | 1 | 0.23/0.23 | WORSE |
+| [v5e64-fail-noclip](https://wandb.ai/cataluna84/llm-architectures/runs/jovwkeht) | 3.6157 | +0.0196 | +12.1σ | 2 | 0.23/0.23 | WORSE |
 
 ### lr
 
@@ -130,9 +141,13 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-cwd-000 | cwd | finished | 0 | 3.5965 | https://wandb.ai/cataluna84/llm-architectures/runs/lcfl0zes |
 | v5e64-cwd-010 | cwd | finished | 0 | 3.5789 | https://wandb.ai/cataluna84/llm-architectures/runs/4q17uo7i |
 | v5e64-cwd-020 | cwd | finished | 0 | 3.5733 | https://wandb.ai/cataluna84/llm-architectures/runs/0dk9scqc |
+| v5e64-cwd-040 | cwd | finished | 0 | 3.5801 | https://wandb.ai/cataluna84/llm-architectures/runs/n7alktpj |
 | v5e64-emblr-010 | emblr | finished | 0 | 3.6125 | https://wandb.ai/cataluna84/llm-architectures/runs/4iwm0ctf |
 | v5e64-emblr-030 | emblr | finished | 0 | 3.5892 | https://wandb.ai/cataluna84/llm-architectures/runs/ilbfhbll |
 | v5e64-emblr-045 | emblr | finished | 0 | 3.5882 | https://wandb.ai/cataluna84/llm-architectures/runs/qmbfh2ku |
+| v5e64-fail-lr056 | failenv | finished | 0 | 3.6369 | https://wandb.ai/cataluna84/llm-architectures/runs/f1a6yun9 |
+| v5e64-fail-mom099 | failenv | finished | 0 | 3.8241 | https://wandb.ai/cataluna84/llm-architectures/runs/v2tunzt8 |
+| v5e64-fail-noclip | failenv | finished | 0 | 3.6157 | https://wandb.ai/cataluna84/llm-architectures/runs/jovwkeht |
 | v5e64-lrsweep-014 | lr | finished | 0 | 3.6186 | https://wandb.ai/cataluna84/llm-architectures/runs/6iw13r57 |
 | v5e64-lrsweep-020 | lr | finished | 0 | 3.5952 | https://wandb.ai/cataluna84/llm-architectures/runs/wfmgz5e4 |
 | v5e64-lrsweep-020-s1 | lr | finished | 1 | 3.5979 | https://wandb.ai/cataluna84/llm-architectures/runs/jt7z58vw |
