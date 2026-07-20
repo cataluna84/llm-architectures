@@ -359,6 +359,16 @@ class HyperParams:
     muon_momentum_min: float = 0.85
     muon_momentum_max: float = 0.95
     muon_momentum_warmup_steps: int = 300
+    # Muon Newton-Schulz iterations (optax default 5) and momentum-buffer
+    # dtype ("" = optax default, or "float32"/"bfloat16").
+    ns_steps: int = 5
+    mu_dtype: str = ""
+    # LR schedule shape for the Muon group: "cosine" (warmup-cosine-decay,
+    # the original) or "wsd" (warmup -> constant -> linear decay to min_lr,
+    # nanochat-style). wsd_warmdown_frac = fraction of total steps spent in
+    # the final linear decay (nanochat default 0.65, their Run 7 used 0.85).
+    lr_schedule: str = "cosine"
+    wsd_warmdown_frac: float = 0.65
     weight_decay: float = 0.0
     cautious_weight_decay: float = 0.01
     grad_clip_norm: float = 1.0
@@ -416,6 +426,28 @@ class HyperParams:
         self.b1 = _env_float("NANOGPT_ADAM_B1", self.b1)
         self.b2 = _env_float("NANOGPT_ADAM_B2", self.b2)
         self.init_seed = _env_int("NANOGPT_SEED", self.init_seed)
+        # Phase-A knobs: momentum bounds, clip, decay floor, Muon internals,
+        # and LR schedule shape ("cosine" | "wsd").
+        self.muon_momentum_min = _env_float(
+            "NANOGPT_MUON_MOMENTUM_MIN", self.muon_momentum_min
+        )
+        self.muon_momentum_max = _env_float(
+            "NANOGPT_MUON_MOMENTUM_MAX", self.muon_momentum_max
+        )
+        self.grad_clip_norm = _env_float(
+            "NANOGPT_GRAD_CLIP_NORM", self.grad_clip_norm
+        )
+        self.min_lr = _env_float("NANOGPT_MIN_LR", self.min_lr)
+        self.ns_steps = _env_int("NANOGPT_NS_STEPS", self.ns_steps)
+        self.mu_dtype = _env_str("NANOGPT_MU_DTYPE", self.mu_dtype)
+        self.lr_schedule = _env_str("NANOGPT_LR_SCHEDULE", self.lr_schedule)
+        self.wsd_warmdown_frac = _env_float(
+            "NANOGPT_WSD_WARMDOWN_FRAC", self.wsd_warmdown_frac
+        )
+        if self.lr_schedule not in ("cosine", "wsd"):
+            raise ValueError(
+                f"NANOGPT_LR_SCHEDULE must be 'cosine' or 'wsd', got {self.lr_schedule!r}"
+            )
 
 
 @jax_pytree_struct

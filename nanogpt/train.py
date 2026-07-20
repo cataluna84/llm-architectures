@@ -107,7 +107,7 @@ def train_step_accum(
     grad_accum_steps,
 ):
     def body(carry, xy):
-        param, opt_state, lsum = carry
+        param, opt_state, lsum, gsum = carry
         xb, yb = xy
         loss, grad = jax.value_and_grad(compute_loss)(
             param, xb, yb, segment_ids, freqs, loss_mask
@@ -117,14 +117,20 @@ def train_step_accum(
         # every micro-step except the last, where it emits the real update.
         updates, new_opt_state = optim.update(grad, opt_state, param)
         new_param = optax.apply_updates(param, updates)
-        return (new_param, new_opt_state, lsum + loss), None
+        gnorm = optax.global_norm(grad)
+        return (new_param, new_opt_state, lsum + loss, gsum + gnorm), None
 
-    carry0 = (params, optim_state, jnp.array(0.0, dtype=jnp.result_type(0.0)))
-    (params, optim_state, lsum), _ = jax.lax.scan(
+    zero = jnp.array(0.0, dtype=jnp.result_type(0.0))
+    carry0 = (params, optim_state, zero, zero)
+    (params, optim_state, lsum, gsum), _ = jax.lax.scan(
         body, carry0, (x_batch, y_batch), length=grad_accum_steps
     )
     loss = lsum / grad_accum_steps
-    return params, loss, optim_state
+    # Mean of per-micro-batch pre-clip grad norms — a pathology signal (spikes,
+    # stalls, blow-ups), not the norm of the averaged gradient MultiSteps holds.
+    grad_norm = gsum / grad_accum_steps
+    param_norm = optax.global_norm(params)
+    return params, loss, optim_state, grad_norm, param_norm
 
 
 @partial(
@@ -138,9 +144,11 @@ def train_step(
     loss, grads = jax.value_and_grad(compute_loss)(
         params, x_batch, y_batch, segment_ids, freqs, loss_mask
     )
+    grad_norm = optax.global_norm(grads)
     updates, optim_state = optim.update(grads, optim_state, params)
     updated_params = optax.apply_updates(params, updates)
-    return updated_params, loss, optim_state
+    param_norm = optax.global_norm(updated_params)
+    return updated_params, loss, optim_state, grad_norm, param_norm
 
 
 @jax.jit
@@ -293,6 +301,10 @@ def main():
         muon_momentum_min=cfg.hparams.muon_momentum_min,
         muon_momentum_max=cfg.hparams.muon_momentum_max,
         muon_momentum_warmup_steps=cfg.hparams.muon_momentum_warmup_steps,
+        ns_steps=cfg.hparams.ns_steps,
+        mu_dtype=cfg.hparams.mu_dtype,
+        lr_schedule=cfg.hparams.lr_schedule,
+        wsd_warmdown_frac=cfg.hparams.wsd_warmdown_frac,
     )
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
@@ -377,6 +389,11 @@ def main():
             "cautious_weight_decay": cfg.hparams.cautious_weight_decay,
             "adam_b1": cfg.hparams.b1,
             "adam_b2": cfg.hparams.b2,
+            "grad_clip_norm": cfg.hparams.grad_clip_norm,
+            "ns_steps": cfg.hparams.ns_steps,
+            "mu_dtype": cfg.hparams.mu_dtype or "float32",
+            "lr_schedule": cfg.hparams.lr_schedule,
+            "wsd_warmdown_frac": cfg.hparams.wsd_warmdown_frac,
             "total_train_steps": total_train_steps,
             "num_devices": len(devices),
             "stage": "pretrain",
@@ -461,6 +478,24 @@ def main():
     # Per-step wall times for p50/p90/p99 summary stats; the first steps of a
     # run are dropped at summary time (compile + cache warmup dominate them).
     step_times: list[float] = []
+    # Pathology accounting: post-warmup upward loss jumps, and an early-abort
+    # for diverged configs (a dead run otherwise burns its full step budget;
+    # loss is computed on the replicated global batch, so every host reaches
+    # the same verdict and exits together). NANOGPT_DIVERGENCE_ABORT=0 opts out.
+    loss_spikes = 0
+    prev_loss: float | None = None
+    divergence_abort = os.environ.get("NANOGPT_DIVERGENCE_ABORT", "1") == "1"
+    hbm_stats_first: tuple | None = None
+
+    def hbm_stats():
+        try:
+            ms = jax.local_devices()[0].memory_stats()
+            peak, limit = ms.get("peak_bytes_in_use"), ms.get("bytes_limit")
+            if peak and limit:
+                return peak / 2**30, limit / 2**30, 100.0 * peak / limit
+        except Exception:
+            pass
+        return None
 
     simple_batch = np.zeros((bsz, seqlen + 1), dtype=np.uint16)
     grad_accum_batch = np.zeros((grad_accum_steps, bsz, seqlen + 1), dtype=np.uint16)
@@ -521,16 +556,18 @@ def main():
                         )
                         stacked_x = stacked_batch[:, :, :-1]
                         stacked_y = stacked_batch[:, :, 1:]
-                        model, loss, optim_state = train_step_accum(
-                            model,
-                            stacked_x,
-                            stacked_y,
-                            segment_ids,
-                            freqs,
-                            None,
-                            optim_state,
-                            optim,
-                            grad_accum_steps,
+                        model, loss, optim_state, grad_norm, param_norm = (
+                            train_step_accum(
+                                model,
+                                stacked_x,
+                                stacked_y,
+                                segment_ids,
+                                freqs,
+                                None,
+                                optim_state,
+                                optim,
+                                grad_accum_steps,
+                            )
                         )
                     else:
                         starts, ends = bf.next_batch(bsz, seqlen)
@@ -547,7 +584,7 @@ def main():
                         stacked_batch = host_local_to_global(data_sharding, simple_batch, local_rows, 0)  # fmt: off
                         stacked_x = stacked_batch[:, :-1]
                         stacked_y = stacked_batch[:, 1:]
-                        model, loss, optim_state = train_step(
+                        model, loss, optim_state, grad_norm, param_norm = train_step(
                             model,
                             stacked_x,
                             stacked_y,
@@ -568,6 +605,37 @@ def main():
                     total_train_step_time += dt
                     steps_this_run += 1
                     step_times.append(dt)
+
+                    loss_f = float(loss)
+                    if (
+                        prev_loss is not None
+                        and step > warmup_steps
+                        and loss_f > prev_loss + 0.15
+                    ):
+                        loss_spikes += 1
+                    prev_loss = loss_f
+                    if steps_this_run == 1:
+                        hbm_stats_first = hbm_stats()
+                        if hbm_stats_first:
+                            print(
+                                f"HBM after first step: {hbm_stats_first[0]:.2f} / "
+                                f"{hbm_stats_first[1]:.2f} GiB "
+                                f"({hbm_stats_first[2]:.1f}%)"
+                            )
+                    if divergence_abort and step > 50 and not (loss_f <= 8.0):
+                        # `not (x <= 8.0)` is True for NaN as well as big/inf.
+                        print(
+                            f"DIVERGED at step {step}: loss={loss_f} "
+                            f"grad_norm={float(grad_norm):.3f} — aborting run early"
+                        )
+                        run.summary(
+                            diverged=True,
+                            diverged_at_step=step,
+                            best_val_loss=best_loss,
+                            loss_spikes=loss_spikes,
+                        )
+                        run.finish()
+                        raise SystemExit(0)
                     tokens_per_sec = int(tokens_processed / dt)
                     # MFU = achieved FLOPs/s over device peak. ETA uses the
                     # average step time so far (the compile-heavy first step
@@ -587,6 +655,8 @@ def main():
                                 "train/loss": float(loss),
                                 "train/lr": float(lr_fn(step)),
                                 "train/muon_beta": muon_beta_fn(step),
+                                "train/grad_norm": float(grad_norm),
+                                "train/param_norm": float(param_norm),
                                 "perf/tokens_per_sec": tokens_per_sec,
                                 "perf/step_time_s": dt,
                                 "perf/mfu": mfu,
@@ -726,6 +796,7 @@ def main():
     def pct(q: float) -> float:
         return steady[min(len(steady) - 1, int(q * len(steady)))] if steady else 0.0
 
+    hbm_final = hbm_stats() or hbm_stats_first
     run.summary(
         total_training_time=total_train_step_time,
         total_training_flops=6 * num_params * total_tokens_consumed,
@@ -737,6 +808,11 @@ def main():
         p50_step_time=pct(0.50),
         p90_step_time=pct(0.90),
         p99_step_time=pct(0.99),
+        loss_spikes=loss_spikes,
+        diverged=False,
+        hbm_peak_gib=hbm_final[0] if hbm_final else None,
+        hbm_limit_gib=hbm_final[1] if hbm_final else None,
+        hbm_util_pct=hbm_final[2] if hbm_final else None,
     )
     run.finish()
 

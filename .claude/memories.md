@@ -4,6 +4,14 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
 
 ## Operational gotchas (transferred from tinyaya-stage2-scale, battle-tested)
 
+- **`echo X >> file` corrupts the last line when the file lacks a trailing
+  newline.** This silently glued `NTFY_TOPIC=` onto the `HF_TOKEN` line of
+  `.env` — the variable never existed, `notify()` no-opped *by design*, and
+  every push event on 2026-07-20 was dropped until the user asked where their
+  notifications were. Append with `printf '\n%s\n'` or verify the tail first.
+  Same lesson as the exit-status bug: an alerting channel that can fail
+  silently WILL, so send a test event through any new pipe end to end before
+  trusting it.
 - **`$(...)` in the same line as `$?` destroys the exit status.** In
   `echo "[$(date -Is)] exited with status $?"` bash runs the substitution while
   expanding the line, resetting `$?` to `date`'s status — so the launcher

@@ -74,7 +74,7 @@ seg_cmd() { # tag
 # "nanogpt/train.py exited with status 0", "nanogpt/train_sft.py exited ...",
 # and every line the pre-2026-07-20 launcher wrote.
 run_status() { # tag
-    vmssh 0 "$(seg_cmd "$1") | grep -E 'exited with status|Reached maximum training steps|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | tail -6"
+    vmssh 0 "$(seg_cmd "$1") | grep -E 'exited with status|Reached maximum training steps|DIVERGED at step|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | tail -6"
 }
 
 run_best_loss() { # tag
@@ -138,6 +138,14 @@ while IFS= read -r -u3 line || [ -n "$line" ]; do
             echo "[sweep $(_ts)] run #$run_no finished:"
             echo "$status"
             [ -n "$best" ] && echo "$best"
+            # DIVERGED is a *verdict*, not a failure of the sweep: the config
+            # blew up, train.py recorded it and exited cleanly. Log, notify,
+            # and move on to the next run — deliberate failure-envelope probes
+            # depend on this path.
+            if echo "$status" | grep -q "DIVERGED at step"; then
+                notify "sweep_runner: run #$run_no DIVERGED — $(echo "$status" | grep 'DIVERGED at step' | tail -1)"
+                break
+            fi
             # Two independent success conditions, because either alone has
             # failed us: the success marker (the exit status was cosmetically
             # always 0 until 2026-07-20) and a zero exit status (a run can

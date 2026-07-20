@@ -72,8 +72,12 @@ for path in glob.glob("scripts/tpu/runs/*.runs"):
             continue
         chips = 64  # v5e-64 runs files
         rows = bsz * chips
-        if rows * 2048 != 524288:
-            bad.append(f"{path}:{n} tokens/step={rows*2048} != 524288")
+        # Model accumulation exactly as train.py derives it: smaller
+        # per-device batches accumulate up to B_ref, so tokens/step =
+        # rows * seqlen * accum (the accum-2 numerics control is legal).
+        accum = max(1, 524288 // (rows * 2048))
+        if rows * 2048 * accum != 524288:
+            bad.append(f"{path}:{n} tokens/step={rows*2048*accum} != 524288")
         if vmb and vmb * rows != 6400:
             bad.append(f"{path}:{n} val rows={vmb*rows} != 6400")
 print("\n".join(bad) if bad else "run-invariants-ok")

@@ -144,7 +144,14 @@ def init_wandb(cfg, run_name, config):
     # empty strings. Our config treats empty as unset, but the wandb library
     # reads these raw and chokes (e.g. WANDB_RUN_ID="" -> "Run ID cannot be
     # empty"). Scrub empties so both layers agree.
-    for key in ("WANDB_RUN_ID", "WANDB_RUN_NAME", "WANDB_NAME", "WANDB_MODE"):
+    for key in (
+        "WANDB_RUN_ID",
+        "WANDB_RUN_NAME",
+        "WANDB_NAME",
+        "WANDB_MODE",
+        "WANDB_RUN_GROUP",
+        "WANDB_JOB_TYPE",
+    ):
         if key in os.environ and not os.environ[key]:
             del os.environ[key]
     wcfg = cfg.wandb
