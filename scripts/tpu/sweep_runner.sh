@@ -6,9 +6,13 @@
 # Reads RUNS_FILE: one run per line, each line a space-separated list of
 # KEY=VALUE envs passed to deploy_tarball.sh (blank lines / #-comments
 # skipped). Runs execute strictly in order; each is deployed, then watched to
-# completion via the exit-count ledger on worker 0's /tmp/train.log. A run
-# that finishes without "Reached maximum training steps" aborts the sweep
+# completion via this run's tag-scoped segment of worker 0's /tmp/train.log. A
+# run that finishes without "Reached maximum training steps" aborts the sweep
 # (loudly, with ntfy) rather than plowing on with a broken fleet.
+#
+# Stage-agnostic: a runs-file line may set NANOGPT_ENTRYPOINT to run SFT or any
+# other stage, and RUN_TIMEOUT_SECONDS to override the completion budget for
+# that one run (a 10k pretrain needs far longer than a 1000-step sweep run).
 #
 # Usage:
 #   tmux new -d -s sweep \
@@ -27,8 +31,9 @@ ZONE="${ZONE:?set ZONE}"
 NODE_ID="${NODE_ID:?set NODE_ID}"
 PROJECT_ID="${PROJECT_ID:-ml-pipelines-315702}"
 RUNS_FILE="${RUNS_FILE:?set RUNS_FILE (one run per line: KEY=VALUE ...)}"
-# Per-run completion budget (seconds). Sweep runs on v5e-64 should take
-# ~6-12 min; leave slack for compile + deploy.
+# Default per-run completion budget (seconds); a runs-file line may override it
+# with its own RUN_TIMEOUT_SECONDS=. Sweep runs on v5e-64 take ~6-12 min;
+# leave slack for compile + deploy.
 RUN_TIMEOUT_SECONDS="${RUN_TIMEOUT_SECONDS:-3600}"
 # All-workers readiness gate before the first deploy (startup marker present).
 EXPECT_WORKERS="${EXPECT_WORKERS:-16}"
@@ -48,6 +53,32 @@ ready_workers() {
         --project="$PROJECT_ID" --zone="$ZONE" --worker=all --quiet \
         --command="sudo grep -c 'startup_script.sh complete' /tmp/startup.log 2>/dev/null" \
         2>/dev/null | grep -c '^1$'
+}
+
+# Print the tag-scoped segment of worker 0's train.log, i.e. everything from
+# this deploy's launch line onward. Never matches a stale segment from an
+# earlier deploy or boot (a 7h-old segment once triggered a spurious abort).
+seg_cmd() { # tag
+    printf "awk -v t='tag=%s' 'index(\$0, t){m=NR} m && NR>=m' /tmp/train.log" "$1"
+}
+
+# Rare status markers, read from the TAIL.
+#
+# These MUST NOT share a filter with the repeating "Best loss" line. The
+# original probe piped both through a single `head -6`; a 1000-step run emits
+# one "Best loss" per shard boundary, so the six lines of head budget were
+# consumed before the exit marker and the run looked hung forever. A finished
+# 1000-step run went undetected for an hour on 2026-07-20 this way.
+#
+# "exited with status" is deliberately stage-agnostic — it matches
+# "nanogpt/train.py exited with status 0", "nanogpt/train_sft.py exited ...",
+# and every line the pre-2026-07-20 launcher wrote.
+run_status() { # tag
+    vmssh 0 "$(seg_cmd "$1") | grep -E 'exited with status|Reached maximum training steps|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | tail -6"
+}
+
+run_best_loss() { # tag
+    vmssh 0 "$(seg_cmd "$1") | grep 'Best loss' | tail -1"
 }
 
 echo "[sweep $(_ts)] runner start: node=$NODE_ID zone=$ZONE runs_file=$RUNS_FILE"
@@ -76,8 +107,19 @@ while IFS= read -r -u3 line || [ -n "$line" ]; do
     case "$line" in ''|\#*) continue ;; esac
     run_no=$(( run_no + 1 ))
     tag="sweeprun${run_no}-$(date +%s)"
+
+    # Per-run timeout override, if this line carries one.
+    run_timeout="$RUN_TIMEOUT_SECONDS"
+    case "$line" in
+        *RUN_TIMEOUT_SECONDS=*)
+            run_timeout="$(printf '%s\n' "$line" \
+                | sed -n 's/.*RUN_TIMEOUT_SECONDS=\([0-9]\{1,\}\).*/\1/p')"
+            run_timeout="${run_timeout:-$RUN_TIMEOUT_SECONDS}"
+            ;;
+    esac
+
     echo ""
-    echo "[sweep $(_ts)] === run #$run_no tag=$tag: $line ==="
+    echo "[sweep $(_ts)] === run #$run_no tag=$tag (timeout ${run_timeout}s): $line ==="
 
     if ! env $line ZONE="$ZONE" NODE_ID="$NODE_ID" RUN_TAG="$tag" \
          bash "$SCRIPT_DIR/deploy_tarball.sh" </dev/null >>/tmp/sweep_deploy.log 2>&1; then
@@ -87,17 +129,17 @@ while IFS= read -r -u3 line || [ -n "$line" ]; do
     fi
     echo "[sweep $(_ts)] run #$run_no deployed; waiting on log segment tag=$tag"
 
-    # Completion = "train.py exited" INSIDE this run's tag-scoped log segment.
-    # Never matches stale segments from earlier deploys/boots.
-    deadline=$(( $(date +%s) + RUN_TIMEOUT_SECONDS ))
+    deadline=$(( $(date +%s) + run_timeout ))
     while true; do
         sleep 60
-        seg=$(vmssh 0 "awk -v t='tag=$tag' 'index(\$0, t){m=NR} m && NR>=m' /tmp/train.log | grep -E 'train.py exited|Reached maximum training steps|Best loss|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | head -6")
-        if echo "$seg" | grep -q "train.py exited"; then
+        status="$(run_status "$tag")"
+        if echo "$status" | grep -q 'exited with status'; then
+            best="$(run_best_loss "$tag")"
             echo "[sweep $(_ts)] run #$run_no finished:"
-            echo "$seg"
-            if echo "$seg" | grep -q "Reached maximum training steps"; then
-                notify "sweep_runner: run #$run_no OK — $(echo "$seg" | grep 'Best loss' | head -1)"
+            echo "$status"
+            [ -n "$best" ] && echo "$best"
+            if echo "$status" | grep -q "Reached maximum training steps"; then
+                notify "sweep_runner: run #$run_no OK — ${best:-no val loss recorded}"
             else
                 echo "[sweep $(_ts)] ABORT: run #$run_no did not complete cleanly"
                 notify "sweep_runner ABORT: run #$run_no failed — check /tmp/train.log on $NODE_ID"
@@ -106,7 +148,7 @@ while IFS= read -r -u3 line || [ -n "$line" ]; do
             break
         fi
         if [ "$(date +%s)" -ge "$deadline" ]; then
-            echo "[sweep $(_ts)] ABORT: run #$run_no exceeded ${RUN_TIMEOUT_SECONDS}s (preemption? check qr_watch)"
+            echo "[sweep $(_ts)] ABORT: run #$run_no exceeded ${run_timeout}s (preemption? check qr_watch)"
             notify "sweep_runner ABORT: run #$run_no timed out"
             exit 1
         fi
