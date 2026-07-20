@@ -1,0 +1,7 @@
+# VM-loop smoke: proves the GCS-blackboard orchestration end to end before
+# any real program runs under it. Two 50-step runs — enough to see spec
+# pickup on 16 agents, a rendezvous, verdict detection on the local log,
+# journaling, and stage/program completion events. ~4 min total.
+
+TOTAL_TRAIN_STEPS=50 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=900 WANDB_RUN_GROUP=vmloop-smoke WANDB_JOB_TYPE=smoke WANDB_RUN_NAME=vmloop-smoke-a
+TOTAL_TRAIN_STEPS=50 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=900 NANOGPT_SEED=1 WANDB_RUN_GROUP=vmloop-smoke WANDB_JOB_TYPE=smoke WANDB_RUN_NAME=vmloop-smoke-b

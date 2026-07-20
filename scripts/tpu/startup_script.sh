@@ -111,6 +111,34 @@ else
 fi
 
 # ----- 6. launch training in tmux -----
+# VM-resident program mode: if a program is active in the GCS control plane,
+# this boot belongs to it — start the per-worker agent (and the coordinator
+# on worker 0) instead of a direct train launch, and let the journal resume
+# the program where the preemption interrupted it.
+CONTROL="gs://llm-architectures-eu/nanogptjax/control"
+ACTIVE_PROGRAM="$(gcloud storage cat "$CONTROL/ACTIVE_PROGRAM" 2>/dev/null | tr -d '[:space:]')"
+case "$ACTIVE_PROGRAM" in
+    done:*)
+        echo "[startup] program '$ACTIVE_PROGRAM' — idle boot, launching nothing"
+        echo "=== [$(date -Is)] startup_script.sh complete on $(hostname) ==="
+        exit 0
+        ;;
+    ?*)
+        echo "[startup] ACTIVE_PROGRAM=$ACTIVE_PROGRAM — starting agent (+coordinator on w0)"
+        WORKER_NUM="$(read_meta agent-worker-number "${HOSTNAME##*-w-}")"
+        tmux kill-session -t agent 2>/dev/null || true
+        tmux kill-session -t sweep 2>/dev/null || true
+        tmux new-session -d -s agent \
+            "REPO_DIR='$REPO_DIR' CONTROL='$CONTROL' bash '$REPO_DIR/scripts/tpu/vm_worker_agent.sh'"
+        if [ "$WORKER_NUM" = "0" ]; then
+            tmux new-session -d -s sweep \
+                "REPO_DIR='$REPO_DIR' CONTROL='$CONTROL' bash '$REPO_DIR/scripts/tpu/vm_coordinator.sh'"
+        fi
+        echo "=== [$(date -Is)] startup_script.sh complete on $(hostname) ==="
+        exit 0
+        ;;
+esac
+
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 tmux new-session -d -s "$TMUX_SESSION" "
     set -uo pipefail

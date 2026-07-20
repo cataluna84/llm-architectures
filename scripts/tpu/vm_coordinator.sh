@@ -1,0 +1,164 @@
+#!/bin/bash
+# Program coordinator for the VM-resident orchestration loop. Runs ONLY on
+# worker 0, inside tmux session "sweep". The workstation may die at any point;
+# this loop, the agents, and the GCS journal carry the program.
+#
+# Per run: publish spec-<gen>.env -> agents (this host included) launch it ->
+# watch the LOCAL /tmp/train.log tag-scoped segment for a verdict -> journal
+# -> next. Stage failure stops the program (later stages depend on earlier
+# verdicts); DIVERGED is a verdict, not a failure.
+#
+# Resume: the GCS journal keys completed runs as "<runs-file>:<run-name>"; a
+# reboot (startup_script re-starts this) skips them and republishes only what
+# is left.
+set -uo pipefail
+
+REPO_DIR="${REPO_DIR:-/opt/llm-architectures}"
+CONTROL="${CONTROL:-gs://llm-architectures-eu/nanogptjax/control}"
+TRAIN_LOG="/tmp/train.log"
+COORD_LOG="/tmp/coordinator.log"
+EXPECT_WORKERS="${EXPECT_WORKERS:-16}"
+RUN_TIMEOUT_SECONDS_DEFAULT="${RUN_TIMEOUT_SECONDS:-3600}"
+HEARTBEAT_EVERY_S="${HEARTBEAT_EVERY_S:-1800}"
+
+_ts() { date -Is; }
+log() { echo "[coord $(_ts)] $*" | tee -a "$COORD_LOG"; }
+
+# ntfy straight from the VM (.env ships in the code tarball). No-op if unset.
+NTFY_TOPIC="$(grep -m1 '^NTFY_TOPIC=' "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2)"
+notify() {
+    [ -n "$NTFY_TOPIC" ] || return 0
+    curl -fsS -o /dev/null -m 15 -d "$1" "https://ntfy.sh/$NTFY_TOPIC" 2>/dev/null || true
+}
+
+# ---- one-coordinator guard + program resolution ----
+PROGRAM="$(gcloud storage cat "$CONTROL/ACTIVE_PROGRAM" 2>/dev/null | tr -d '[:space:]')"
+case "$PROGRAM" in
+    ""|done:*) log "no active program ('$PROGRAM') — exiting"; exit 0 ;;
+esac
+PREFIX="$CONTROL/$PROGRAM"
+
+# Test the alerting pipe BEFORE trusting it (the dead-pipe lesson: a silent
+# notifier is worse than none).
+notify "vm-coordinator: starting program '$PROGRAM' on $(hostname) $(_ts)"
+log "program=$PROGRAM prefix=$PREFIX ntfy=$([ -n "$NTFY_TOPIC" ] && echo on || echo OFF)"
+
+# ---- readiness gate: all agents booted ----
+for _i in $(seq 1 60); do
+    n="$(gcloud storage ls "$PREFIX/boot/w*" 2>/dev/null | wc -l)"
+    log "readiness: $n/$EXPECT_WORKERS agents booted"
+    [ "$n" -ge "$EXPECT_WORKERS" ] && break
+    if [ "$_i" -eq 60 ]; then
+        log "ABORT: agents never became ready"
+        notify "vm-coordinator ABORT: only $n/$EXPECT_WORKERS agents booted"
+        exit 1
+    fi
+    sleep 20
+done
+
+# ---- resume state ----
+journal="$(gcloud storage cat "$PREFIX/journal" 2>/dev/null || true)"
+gen=0
+for u in $(gcloud storage ls "$PREFIX/spec-*.env" 2>/dev/null); do
+    n="${u##*/spec-}"; n="${n%.env}"
+    [ "$n" -gt "$gen" ] 2>/dev/null && gen="$n"
+done
+log "resume: generation=$gen, journal has $(printf '%s' "$journal" | grep -c . || true) entries"
+
+journal_add() { # key
+    journal="$(printf '%s\n%s' "$journal" "$1")"
+    printf '%s\n' "$journal" | gcloud storage cp - "$PREFIX/journal"
+}
+
+last_heartbeat=0
+heartbeat() {
+    now=$(date +%s)
+    echo "$(_ts) gen=$gen" | gcloud storage cp - "$PREFIX/heartbeat" 2>/dev/null
+    gcloud storage cp "$COORD_LOG" "$PREFIX/logs/coordinator.log" 2>/dev/null
+    if [ $(( now - last_heartbeat )) -ge "$HEARTBEAT_EVERY_S" ]; then
+        notify "vm-coordinator heartbeat: program=$PROGRAM gen=$gen $(_ts)"
+        last_heartbeat=$now
+    fi
+}
+
+# ---- verdict probes: local log, tag-scoped, tail-not-head ----
+seg() { awk -v t="tag=$1" 'index($0, t){m=NR} m && NR>=m' "$TRAIN_LOG"; }
+run_status() { seg "$1" | grep -E 'exited with status|Reached maximum training steps|DIVERGED at step|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | tail -6; }
+run_best_loss() { seg "$1" | grep 'Best loss' | tail -1; }
+
+# ---- main loop over program.list (fd 3: loop body shells out) ----
+mapfile -t RUNS_FILES < <(gcloud storage cat "$PREFIX/program.list")
+log "program.list: ${RUNS_FILES[*]}"
+
+for rf in "${RUNS_FILES[@]}"; do
+    [ -n "$rf" ] || continue
+    if [ ! -f "$REPO_DIR/$rf" ]; then
+        log "ABORT: missing runs file $rf"
+        notify "vm-coordinator ABORT: missing runs file $rf"
+        exit 1
+    fi
+    log "=== stage $rf ==="
+    run_no=0
+    while IFS= read -r -u3 line || [ -n "$line" ]; do
+        case "$line" in ''|\#*) continue ;; esac
+        run_no=$(( run_no + 1 ))
+        run_name="$(printf '%s\n' "$line" | grep -oE 'WANDB_RUN_NAME=[^ ]+' | cut -d= -f2)"
+        key="$rf:${run_name:-run$run_no}"
+        if printf '%s\n' "$journal" | grep -Fxq "$key"; then
+            log "SKIP $key (journaled)"
+            continue
+        fi
+
+        run_timeout="$RUN_TIMEOUT_SECONDS_DEFAULT"
+        case "$line" in *RUN_TIMEOUT_SECONDS=*)
+            t="$(printf '%s\n' "$line" | sed -n 's/.*RUN_TIMEOUT_SECONDS=\([0-9]\{1,\}\).*/\1/p')"
+            run_timeout="${t:-$run_timeout}" ;;
+        esac
+
+        gen=$(( gen + 1 ))
+        tag="vmrun${gen}-$(date +%s)"
+        spec="$(for kv in $line; do printf 'export %s\n' "$kv"; done
+                printf 'export RUN_TAG=%s\n' "$tag")"
+        printf '%s\n' "$spec" | gcloud storage cp - "$PREFIX/spec-$gen.env"
+        log "published spec-$gen ($key, timeout ${run_timeout}s)"
+
+        deadline=$(( $(date +%s) + run_timeout ))
+        while true; do
+            sleep 30
+            heartbeat
+            status="$(run_status "$tag")"
+            if echo "$status" | grep -q 'DIVERGED at step'; then
+                log "$key DIVERGED — verdict recorded, continuing"
+                notify "vm-coordinator: $key DIVERGED — $(echo "$status" | grep 'DIVERGED at step' | tail -1)"
+                journal_add "$key"
+                break
+            fi
+            if echo "$status" | grep -q 'exited with status'; then
+                best="$(run_best_loss "$tag")"
+                if echo "$status" | grep -q 'Reached maximum training steps' \
+                   && ! echo "$status" | grep -qE 'exited with status [^0]'; then
+                    log "$key OK — ${best:-no val loss}"
+                    notify "vm-coordinator: $key OK — ${best:-no val loss recorded}"
+                    journal_add "$key"
+                    break
+                fi
+                log "ABORT: $key failed:"; printf '%s\n' "$status" | tee -a "$COORD_LOG"
+                notify "vm-coordinator ABORT: $key failed — program stopped. $(echo "$status" | tail -1)"
+                heartbeat
+                exit 1
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+                log "ABORT: $key exceeded ${run_timeout}s"
+                notify "vm-coordinator ABORT: $key timed out (${run_timeout}s) — program stopped"
+                exit 1
+            fi
+        done
+    done 3< "$REPO_DIR/$rf"
+    log "stage $rf complete"
+    notify "vm-coordinator: stage $(basename "$rf") complete"
+done
+
+log "PROGRAM COMPLETE — all stages finished"
+echo "done:$PROGRAM" | gcloud storage cp - "$CONTROL/ACTIVE_PROGRAM"
+heartbeat
+notify "vm-coordinator: PROGRAM COMPLETE ($PROGRAM). TPU idle; results on W&B."

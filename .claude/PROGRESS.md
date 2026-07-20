@@ -1113,3 +1113,135 @@ cd /home/cataluna84/Workspace/llm-architectures
 ## 2026-07-20T12:38:49Z | feat/nanoGPTJAX@040997c | done | edit
 created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage4.runs`
 
+
+## 2026-07-20T12:39:16Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T12:39:29Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T12:39:43Z | feat/nanoGPTJAX@9c93899 | fail | verify
+verify: 6 passed, 1 failed out of 7 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T13:10:47Z | feat/nanoGPTJAX@9c93899 | info | session
+SessionEnd (other): 7 item(s) carried forward
+
+Next steps:
+- sweep_runner completion probe fixed (rare markers via tail, `Best loss`
+- Auto-resume + W&B identity in boot metadata verified across a real
+- v5e64-lrsweep-014 / -028 / -020-nomom
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
+- SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
+- Post-run: docs/training.md, README benchmarking table, results on PR #1
+
+
+## 2026-07-20T14:00:36Z | feat/nanoGPTJAX@9c93899 | info | session
+SessionEnd (resume): 7 item(s) carried forward
+
+Next steps:
+- sweep_runner completion probe fixed (rare markers via tail, `Best loss`
+- Auto-resume + W&B identity in boot metadata verified across a real
+- v5e64-lrsweep-014 / -028 / -020-nomom
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
+- SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
+- Post-run: docs/training.md, README benchmarking table, results on PR #1
+
+
+## 2026-07-20T14:01:50Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:02:18Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:02:47Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:03:01Z | feat/nanoGPTJAX@9c93899 | fail | verify
+verify: 6 passed, 1 failed out of 7 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T14:04:28Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:04:39Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/tinyaya-stage2-scale
+
+
+## 2026-07-20T14:05:26Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/supervisor_driver.sh`
+
+
+## 2026-07-20T14:12:35Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/.claude/plans/ok-go-ahead-for-eventual-cloud.md`
+
+
+## 2026-07-20T14:14:32Z | feat/nanoGPTJAX@9c93899 | done | edit
+edited `/home/cataluna84/.claude/plans/ok-go-ahead-for-eventual-cloud.md`
+
+
+## 2026-07-20T14:15:02Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:15:37Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:16:04Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:16:12Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:16:35Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:16:50Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/train_launcher.sh`
+
+
+## 2026-07-20T14:17:13Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/vm_worker_agent.sh`
+
+
+## 2026-07-20T14:18:02Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/vm_coordinator.sh`
+
+
+## 2026-07-20T14:18:33Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/launch_vm_program.sh`
+
+
+## 2026-07-20T14:18:40Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:18:52Z | feat/nanoGPTJAX@9c93899 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/startup_script.sh`
+
+
+## 2026-07-20T14:19:08Z | feat/nanoGPTJAX@9c93899 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T14:19:19Z | feat/nanoGPTJAX@9c93899 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/vmloop-smoke.runs`
+
