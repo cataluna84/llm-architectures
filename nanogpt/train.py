@@ -273,7 +273,7 @@ def main():
 
     # Load the model
     print("Building GPT model based on the config...")
-    model = GPT.init(jax.random.PRNGKey(0), cfg)
+    model = GPT.init(jax.random.PRNGKey(cfg.hparams.init_seed), cfg)
     print("Model built successfully!")
 
     # Optimizer
@@ -287,6 +287,7 @@ def main():
         b1=cfg.hparams.b1,
         b2=cfg.hparams.b2,
         embedding_lr=cfg.hparams.embedding_lr,
+        unembedding_lr=cfg.hparams.unembedding_lr,
         weight_decay=cfg.hparams.weight_decay,
         cautious_weight_decay=cfg.hparams.cautious_weight_decay,
         muon_momentum_min=cfg.hparams.muon_momentum_min,
@@ -368,6 +369,14 @@ def main():
             "muon_momentum_warmup_steps": cfg.hparams.muon_momentum_warmup_steps,
             "warmup_steps": warmup_steps,
             "weight_decay": cfg.hparams.weight_decay,
+            # Sweep-v2 identity: every swept knob recorded so runs are
+            # self-describing on W&B without consulting the runs file.
+            "init_seed": cfg.hparams.init_seed,
+            "embedding_lr": cfg.hparams.embedding_lr,
+            "unembedding_lr": cfg.hparams.unembedding_lr,
+            "cautious_weight_decay": cfg.hparams.cautious_weight_decay,
+            "adam_b1": cfg.hparams.b1,
+            "adam_b2": cfg.hparams.b2,
             "total_train_steps": total_train_steps,
             "num_devices": len(devices),
             "stage": "pretrain",
@@ -449,6 +458,9 @@ def main():
     # nanochat-leaderboard "total_training_time" convention.
     total_train_step_time = 0.0
     steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
+    # Per-step wall times for p50/p90/p99 summary stats; the first steps of a
+    # run are dropped at summary time (compile + cache warmup dominate them).
+    step_times: list[float] = []
 
     simple_batch = np.zeros((bsz, seqlen + 1), dtype=np.uint16)
     grad_accum_batch = np.zeros((grad_accum_steps, bsz, seqlen + 1), dtype=np.uint16)
@@ -555,6 +567,7 @@ def main():
                     total_tokens_consumed += tokens_processed
                     total_train_step_time += dt
                     steps_this_run += 1
+                    step_times.append(dt)
                     tokens_per_sec = int(tokens_processed / dt)
                     # MFU = achieved FLOPs/s over device peak. ETA uses the
                     # average step time so far (the compile-heavy first step
@@ -706,6 +719,13 @@ def main():
     # total_training_flops uses the standard 6*N*D (params * tokens) approximation.
     # Full CORE / val_bpb require the tasks/ eval harness (out of scope here);
     # best_val_loss (nats/token) is the in-loop quality proxy.
+    # Steady-state step-time percentiles: the mean hides exactly the tail
+    # stalls that throughput work targets. Skip the compile-heavy first steps.
+    steady = sorted(step_times[10:])
+
+    def pct(q: float) -> float:
+        return steady[min(len(steady) - 1, int(q * len(steady)))] if steady else 0.0
+
     run.summary(
         total_training_time=total_train_step_time,
         total_training_flops=6 * num_params * total_tokens_consumed,
@@ -714,6 +734,9 @@ def main():
         best_step=best_step,
         total_tokens=total_tokens_consumed,
         num_shards=num_shards_used,
+        p50_step_time=pct(0.50),
+        p90_step_time=pct(0.90),
+        p99_step_time=pct(0.99),
     )
     run.finish()
 

@@ -370,6 +370,10 @@ class HyperParams:
     final_lr_frac: float = 0.0
 
     # Other
+    # PRNG seed for parameter init (env: NANOGPT_SEED). Data order is seeded
+    # separately by the loaders, so varying this isolates init variance while
+    # keeping batch composition identical across seed runs.
+    init_seed: int = 0
     es_patience: int = 500
     val_interval: int = 50
     # Cap batches per validation pass (0 = full val set). Validation runs at
@@ -399,6 +403,19 @@ class HyperParams:
         self.muon_momentum_warmup_steps = _env_int(
             "NANOGPT_MUON_MOMENTUM_WARMUP_STEPS", self.muon_momentum_warmup_steps
         )
+        # Sweep-v2 knobs: per-group AdamW LRs, cautious WD, Adam betas, init
+        # seed. Betas have overrides but are deliberately not in the sweep
+        # matrix (nanochat's ablations show both directions regress).
+        self.embedding_lr = _env_float("NANOGPT_EMBEDDING_LR", self.embedding_lr)
+        self.unembedding_lr = _env_float(
+            "NANOGPT_UNEMBEDDING_LR", self.unembedding_lr
+        )
+        self.cautious_weight_decay = _env_float(
+            "NANOGPT_CAUTIOUS_WD", self.cautious_weight_decay
+        )
+        self.b1 = _env_float("NANOGPT_ADAM_B1", self.b1)
+        self.b2 = _env_float("NANOGPT_ADAM_B2", self.b2)
+        self.init_seed = _env_int("NANOGPT_SEED", self.init_seed)
 
 
 @jax_pytree_struct

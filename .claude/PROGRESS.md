@@ -601,3 +601,159 @@ edited `/home/cataluna84/Workspace/llm-architectures/.claude/orchestration/playb
 ## 2026-07-20T07:45:33Z | feat/nanoGPTJAX@023158e | done | edit
 edited `/home/cataluna84/Workspace/llm-architectures/.claude/memories.md`
 
+
+## 2026-07-20T07:45:49Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T07:45:59Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T07:46:20Z | feat/nanoGPTJAX@2a675b9 | fail | verify
+verify: 6 passed, 1 failed out of 7 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T07:48:17Z | feat/nanoGPTJAX@2a675b9 | info | session
+SessionEnd (other): 7 item(s) carried forward
+
+Next steps:
+- sweep_runner completion probe fixed (rare markers via tail, `Best loss`
+- Auto-resume + W&B identity in boot metadata verified across a real
+- v5e64-lrsweep-014 / -028 / -020-nomom
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
+- SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
+- Post-run: docs/training.md, README benchmarking table, results on PR #1
+
+
+## 2026-07-20T07:48:54Z | feat/nanoGPTJAX@2a675b9 | info | session
+SessionEnd (other): 7 item(s) carried forward
+
+Next steps:
+- sweep_runner completion probe fixed (rare markers via tail, `Best loss`
+- Auto-resume + W&B identity in boot metadata verified across a real
+- v5e64-lrsweep-014 / -028 / -020-nomom
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
+- SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
+- Post-run: docs/training.md, README benchmarking table, results on PR #1
+
+
+## 2026-07-20T08:17:01Z | feat/nanoGPTJAX@2a675b9 | info | session
+SessionEnd (resume): 7 item(s) carried forward
+
+Next steps:
+- sweep_runner completion probe fixed (rare markers via tail, `Best loss`
+- Auto-resume + W&B identity in boot metadata verified across a real
+- v5e64-lrsweep-014 / -028 / -020-nomom
+- Momentum-warmup A/B decision (020 vs 020-nomom)
+- Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
+- SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
+- Post-run: docs/training.md, README benchmarking table, results on PR #1
+
+
+## 2026-07-20T08:18:55Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T08:19:02Z | feat/nanoGPTJAX@2a675b9 | fail | verify
+verify: 6 passed, 1 failed out of 7 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T08:19:48Z | feat/nanoGPTJAX@2a675b9 | fail | verify
+verify: 6 passed, 1 failed out of 7 on Stop
+
+FAIL [1] cd "$CLAUDE_PROJECT_DIR" && uv run ruff check nanogpt/*.py
+    [*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+
+## 2026-07-20T08:24:52Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T08:24:57Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T08:43:45Z | feat/nanoGPTJAX@2a675b9 | done | edit
+created `/home/cataluna84/.claude/plans/ok-go-ahead-for-eventual-cloud.md`
+
+
+## 2026-07-20T08:46:18Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/config.py`
+
+
+## 2026-07-20T08:46:24Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/config.py`
+
+
+## 2026-07-20T08:46:29Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:46:31Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:46:39Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:46:45Z | feat/nanoGPTJAX@2a675b9 | done | exec
+sed -n 448,458p nanogpt/train.py
+
+
+## 2026-07-20T08:46:49Z | feat/nanoGPTJAX@2a675b9 | done | exec
+sed -n 458,466p nanogpt/train.py
+
+
+## 2026-07-20T08:46:56Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:46:58Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:47:06Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/nanogpt/train.py`
+
+
+## 2026-07-20T08:47:16Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T08:47:22Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T08:47:29Z | feat/nanoGPTJAX@2a675b9 | done | edit
+edited `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/deploy_tarball.sh`
+
+
+## 2026-07-20T08:47:43Z | feat/nanoGPTJAX@2a675b9 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage1.runs`
+
+
+## 2026-07-20T08:47:57Z | feat/nanoGPTJAX@2a675b9 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage2.runs`
+
+
+## 2026-07-20T08:48:04Z | feat/nanoGPTJAX@2a675b9 | done | edit
+created `/home/cataluna84/Workspace/llm-architectures/scripts/tpu/runs/v5e64-sweep2-stage3.runs`
+
+
+## 2026-07-20T08:48:20Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+
+
+## 2026-07-20T08:48:34Z | feat/nanoGPTJAX@2a675b9 | done | exec
+cd /home/cataluna84/Workspace/llm-architectures
+

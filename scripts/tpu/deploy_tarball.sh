@@ -60,6 +60,12 @@ NANOGPT_RESUME_FROM_STEP="${NANOGPT_RESUME_FROM_STEP:-0}"
 # LR-sweep knobs: empty = code defaults (peak 0.02, momentum warmup 300).
 NANOGPT_OTHER_PEAK_LR="${NANOGPT_OTHER_PEAK_LR:-}"
 NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-}"
+# Sweep-v2 knobs: empty = code defaults (config.py treats empty as unset).
+NANOGPT_WARMUP_STEPS="${NANOGPT_WARMUP_STEPS:-}"
+NANOGPT_SEED="${NANOGPT_SEED:-}"
+NANOGPT_EMBEDDING_LR="${NANOGPT_EMBEDDING_LR:-}"
+NANOGPT_UNEMBEDDING_LR="${NANOGPT_UNEMBEDDING_LR:-}"
+NANOGPT_CAUTIOUS_WD="${NANOGPT_CAUTIOUS_WD:-}"
 # Per-chip peak bf16 FLOPs for the MFU metric; empty = code default (v6e,
 # 918e12). Set 197e12 when deploying to v5e.
 NANOGPT_DEVICE_PEAK_FLOPS="${NANOGPT_DEVICE_PEAK_FLOPS:-}"
@@ -115,9 +121,14 @@ export NANOGPT_VAL_MAX_BATCHES="$NANOGPT_VAL_MAX_BATCHES"
 export NANOGPT_RESUME_FROM_STEP="$NANOGPT_RESUME_FROM_STEP"
 export NANOGPT_OTHER_PEAK_LR="$NANOGPT_OTHER_PEAK_LR"
 export NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="$NANOGPT_MUON_MOMENTUM_WARMUP_STEPS"
+export NANOGPT_WARMUP_STEPS="$NANOGPT_WARMUP_STEPS"
+export NANOGPT_SEED="$NANOGPT_SEED"
+export NANOGPT_EMBEDDING_LR="$NANOGPT_EMBEDDING_LR"
+export NANOGPT_UNEMBEDDING_LR="$NANOGPT_UNEMBEDDING_LR"
+export NANOGPT_CAUTIOUS_WD="$NANOGPT_CAUTIOUS_WD"
 ${WANDB_ENV_LINES}export PYTHONUNBUFFERED=1
 UV="\$(command -v uv || echo /root/.local/bin/uv)"
-echo "[\$(date -Is)] launching $NANOGPT_ENTRYPOINT tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
+echo "[\$(date -Is)] launching $NANOGPT_ENTRYPOINT tag=$RUN_TAG steps=$TOTAL_TRAIN_STEPS bsz=$PER_DEVICE_BATCH_SIZE resume=$NANOGPT_RESUME_FROM_STEP seed=${NANOGPT_SEED:-0} peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a /tmp/train.log
 "\$UV" run python -u "$NANOGPT_ENTRYPOINT" 2>&1 | tee -a /tmp/train.log
 # Capture \$? BEFORE the echo: the \$(date -Is) substitution on that line runs
 # first and resets \$? to date's status, so an inline \$? always reported 0 —
