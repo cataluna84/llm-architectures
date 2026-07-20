@@ -54,6 +54,9 @@ NANOGPT_RESUME_FROM_STEP="${NANOGPT_RESUME_FROM_STEP:-0}"
 # LR-sweep knobs: empty = code defaults (peak 0.02, momentum warmup 300).
 NANOGPT_OTHER_PEAK_LR="${NANOGPT_OTHER_PEAK_LR:-}"
 NANOGPT_MUON_MOMENTUM_WARMUP_STEPS="${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-}"
+# Per-chip peak bf16 FLOPs for the MFU metric; empty = code default (v6e,
+# 918e12). Set 197e12 when deploying to v5e.
+NANOGPT_DEVICE_PEAK_FLOPS="${NANOGPT_DEVICE_PEAK_FLOPS:-}"
 WANDB_RUN_NAME="${WANDB_RUN_NAME:-}"
 WANDB_RUN_ID="${WANDB_RUN_ID:-}"
 
@@ -83,6 +86,7 @@ REMOTE="$WORK/nanogpt_remote_deploy.sh"
 WANDB_ENV_LINES=""
 [ -n "$WANDB_RUN_NAME" ] && WANDB_ENV_LINES+="export WANDB_RUN_NAME=\"$WANDB_RUN_NAME\""$'\n'
 [ -n "$WANDB_RUN_ID" ] && WANDB_ENV_LINES+="export WANDB_RUN_ID=\"$WANDB_RUN_ID\""$'\n'
+[ -n "$NANOGPT_DEVICE_PEAK_FLOPS" ] && WANDB_ENV_LINES+="export NANOGPT_DEVICE_PEAK_FLOPS=\"$NANOGPT_DEVICE_PEAK_FLOPS\""$'\n'
 
 # Runs INSIDE tmux on the VM. Local values are baked in at generation time;
 # escaped \$ are evaluated on the VM at runtime.
@@ -144,13 +148,16 @@ chmod 0644 /tmp/train.log 2>/dev/null || true
 echo "=== [\$(date -Is)] remote deploy complete; training launched in tmux '$TMUX_SESSION' ==="
 EOF
 
-echo "==> [4/5] scp remote scripts to $NODE_ID"
+# --worker=all: single-host slices have one worker; multi-host slices
+# (v5e-64 = 8 workers) need the code + launcher on every host, and every
+# host must relaunch train.py for the jax.distributed rendezvous.
+echo "==> [4/5] scp remote scripts to $NODE_ID (all workers)"
 gcloud compute tpus tpu-vm scp "$LAUNCHER" "$REMOTE" "$NODE_ID":/tmp/ \
-    --project="$PROJECT_ID" --zone="$ZONE" --worker=0 --quiet
+    --project="$PROJECT_ID" --zone="$ZONE" --worker=all --quiet
 
-echo "==> [5/5] executing remote deploy (sudo)"
+echo "==> [5/5] executing remote deploy on all workers (sudo)"
 gcloud compute tpus tpu-vm ssh "$NODE_ID" \
-    --project="$PROJECT_ID" --zone="$ZONE" --worker=0 --quiet \
+    --project="$PROJECT_ID" --zone="$ZONE" --worker=all --quiet \
     --command="sudo bash /tmp/nanogpt_remote_deploy.sh"
 
 echo

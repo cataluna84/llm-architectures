@@ -32,6 +32,16 @@ import jax
 
 jax.config.update("jax_optimization_level", "O1")
 
+# Multi-host TPU slices (e.g. v5e-64: 8 hosts x 8 chips) need the distributed
+# runtime up BEFORE anything touches the backend — model.py queries
+# jax.default_backend() at import time below. Harmless on single-host TPU
+# (initializes a 1-process cluster).
+if os.environ.get("NANOGPT_TPU") == "1":
+    try:
+        jax.distributed.initialize()
+    except Exception as _exc:
+        print(f"[dist] jax.distributed.initialize() skipped: {_exc}")
+
 import optax
 import grain
 import numpy as np
@@ -185,6 +195,20 @@ def get_next_batch(
         return x, y
 
 
+def host_local_to_global(sharding, buf, local_rows, batch_dim):
+    """Ship this host's row-slice of the global batch to its local devices.
+
+    Every process runs the identical data pipeline over the same files, so
+    `buf` holds the full global batch on every host; each host transfers only
+    its own block of `local_rows` along `batch_dim`. With a single process the
+    slice is the whole buffer, making this equivalent to the previous
+    jnp.asarray(buf, dtype=int32, device=sharding).
+    """
+    idx = (slice(None),) * batch_dim + (local_rows,)
+    local = np.ascontiguousarray(buf[idx], dtype=np.int32)
+    return jax.make_array_from_process_local_data(sharding, local, buf.shape)
+
+
 def model_run_name(cfg):
     return (
         f"{cfg.model.attn_type}"
@@ -225,6 +249,12 @@ def main():
     per_device_bsz = cfg.hparams.per_device_batch_size
     bsz = per_device_bsz * len(devices)
     seqlen = cfg.model.seqlen
+    # Multi-host: jax.devices() orders devices by process, so this host owns
+    # the contiguous row block [process_index*local_bsz, ...) of every batch.
+    local_bsz = per_device_bsz * jax.local_device_count()
+    local_rows = slice(
+        jax.process_index() * local_bsz, (jax.process_index() + 1) * local_bsz
+    )
     head_dim = cfg.model.attn.head_dim
     data_sharding = logical_to_sharding(("batch",), cfg.mesh, cfg.rules)
     data_accum_sharding = logical_to_sharding((None, "batch", None), cfg.mesh, cfg.rules)  # fmt: off
@@ -467,10 +497,8 @@ def main():
                                 transfer_to_device=False,
                             )
 
-                        stacked_batch = jnp.asarray(
-                            grad_accum_batch,
-                            dtype=jnp.int32,
-                            device=data_accum_sharding,
+                        stacked_batch = host_local_to_global(
+                            data_accum_sharding, grad_accum_batch, local_rows, 1
                         )
                         stacked_x = stacked_batch[:, :, :-1]
                         stacked_y = stacked_batch[:, :, 1:]
@@ -497,7 +525,7 @@ def main():
                             simple_batch,
                             transfer_to_device=False,
                         )
-                        stacked_batch = jnp.asarray(simple_batch, dtype=jnp.int32, device=data_sharding)  # fmt: off
+                        stacked_batch = host_local_to_global(data_sharding, simple_batch, local_rows, 0)  # fmt: off
                         stacked_x = stacked_batch[:, :-1]
                         stacked_y = stacked_batch[:, 1:]
                         model, loss, optim_state = train_step(
@@ -619,7 +647,7 @@ def main():
                                     val_data_buf,
                                 )
 
-                                curr_val_data = jnp.asarray(val_data_buf, dtype=jnp.int32, device=data_sharding)  # fmt: off
+                                curr_val_data = host_local_to_global(data_sharding, val_data_buf, local_rows, 0)  # fmt: off
                                 x = curr_val_data[:, :-1]
                                 y = curr_val_data[:, 1:]
                                 loss = val_step(model, x, y, segment_ids, freqs, None)
