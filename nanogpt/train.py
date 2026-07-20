@@ -263,7 +263,10 @@ def main():
     min_lr = 0.01 * max_lr
     warmup_steps = cfg.hparams.warmup_steps
     desired_batch_size = cfg.hparams.desired_batch_size
-    grad_accum_steps = max(2, desired_batch_size // (bsz * seqlen))
+    # accum=1 is a real configuration on large slices (v5e-64: 4 x 64 x 2048
+    # = desired_batch_size in a single micro-batch); the old max(2, ...) floor
+    # silently doubled tokens/step there, breaking the B_ref = 524,288 recipe.
+    grad_accum_steps = max(1, desired_batch_size // (bsz * seqlen))
     total_train_steps = cfg.hparams.total_train_steps
     max_checkpoints_to_keep = cfg.ckpt_cfg.max_checkpoints_to_keep
     checkpoint_save_steps = cfg.ckpt_cfg.checkpoint_save_steps
