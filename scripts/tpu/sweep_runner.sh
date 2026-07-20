@@ -68,8 +68,11 @@ done
 echo "[sweep $(_ts)] fleet ready"
 notify "sweep_runner: fleet ready ($EXPECT_WORKERS workers)"
 
+# Runs file on fd 3: the loop body runs ssh/gcloud, which read stdin and
+# would silently swallow the remaining lines of a stdin-fed while-read
+# (observed: a 5-run file "completed" after run 1).
 run_no=0
-while IFS= read -r line || [ -n "$line" ]; do
+while IFS= read -r -u3 line || [ -n "$line" ]; do
     case "$line" in ''|\#*) continue ;; esac
     run_no=$(( run_no + 1 ))
     tag="sweeprun${run_no}-$(date +%s)"
@@ -77,7 +80,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     echo "[sweep $(_ts)] === run #$run_no tag=$tag: $line ==="
 
     if ! env $line ZONE="$ZONE" NODE_ID="$NODE_ID" RUN_TAG="$tag" \
-         bash "$SCRIPT_DIR/deploy_tarball.sh" >>/tmp/sweep_deploy.log 2>&1; then
+         bash "$SCRIPT_DIR/deploy_tarball.sh" </dev/null >>/tmp/sweep_deploy.log 2>&1; then
         echo "[sweep $(_ts)] ABORT: deploy failed for run #$run_no (see /tmp/sweep_deploy.log)"
         notify "sweep_runner ABORT: deploy failed on run #$run_no"
         exit 1
@@ -108,7 +111,7 @@ while IFS= read -r line || [ -n "$line" ]; do
             exit 1
         fi
     done
-done < "$RUNS_FILE"
+done 3< "$RUNS_FILE"
 
 echo "[sweep $(_ts)] SWEEP COMPLETE — all $run_no runs finished"
 notify "sweep_runner: SWEEP COMPLETE ($run_no runs)"

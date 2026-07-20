@@ -22,6 +22,10 @@ Append via `/remember` or `#decision …`. Newest entries at the top of each sec
 
 ## Project decisions (llm-architectures / nanoGPT-JAX)
 
+- **2026-07-20: v5e-64 throughput baseline (bsz 4/chip, accum 1):**
+  0.23 s/step, 2.32M tokens/s, 25.5% MFU — 4.3× the v6e-8 (0.98 s/step,
+  536k tok/s, 10.1% MFU). 1000-step run ≈ 4 min; 10k run ≈ 40 min train time.
+
 - **2026-07-20: orchestration lives in workstation tmux, not agent sessions.**
   Sessions `qrwatch` (qr_watch.sh) + `sweep` (sweep_runner.sh), logs at
   `/tmp/qr_watch.log` / `/tmp/sweep_runner.log`, push events to
