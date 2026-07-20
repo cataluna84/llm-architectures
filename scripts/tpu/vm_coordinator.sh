@@ -81,6 +81,25 @@ heartbeat() {
     fi
 }
 
+# ---- quiescence gate ----
+# Never publish a spec while any host is still executing (or crashing out
+# of) an older one: a recovery republish that races the survivors' collective
+# failure detection produces a rendezvous the late hosts can't join in time
+# (2026-07-20 drill: DEADLINE_EXCEEDED at +5 min). All 16 agents must report
+# "idle" at the current generation first; the survivors' crash-out takes a
+# few minutes and this gate simply absorbs it.
+wait_quiescent() { # current-gen
+    for _q in $(seq 1 60); do
+        n="$(gcloud storage cat "$PREFIX/state/w*" 2>/dev/null | grep -c "^idle gen=$1 ")"
+        [ "$n" -ge "$EXPECT_WORKERS" ] && return 0
+        log "quiescence: $n/$EXPECT_WORKERS idle at gen=$1 (waiting)"
+        sleep 20
+    done
+    log "ABORT: fleet never became quiescent at gen=$1"
+    notify "vm-coordinator ABORT: fleet stuck — $n/$EXPECT_WORKERS idle at gen=$1"
+    exit 1
+}
+
 # ---- verdict probes: local log, tag-scoped, tail-not-head ----
 seg() { awk -v t="tag=$1" 'index($0, t){m=NR} m && NR>=m' "$TRAIN_LOG"; }
 run_status() { seg "$1" | grep -E 'exited with status|Reached maximum training steps|DIVERGED at step|Traceback|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED' | tail -6; }
@@ -115,6 +134,7 @@ for rf in "${RUNS_FILES[@]}"; do
             run_timeout="${t:-$run_timeout}" ;;
         esac
 
+        wait_quiescent "$gen"
         gen=$(( gen + 1 ))
         tag="vmrun${gen}-$(date +%s)"
         # Translate runs-file keys to the env config.py actually reads —

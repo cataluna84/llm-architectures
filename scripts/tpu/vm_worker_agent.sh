@@ -44,11 +44,20 @@ log "start: worker=$WORKER program=$PROGRAM from generation=$gen"
 # Boot marker doubles as the coordinator's readiness gate.
 echo "$(_ts) gen=$gen" | gcloud storage cp - "$PREFIX/boot/w$WORKER" 2>/dev/null
 
+# State object: the coordinator's quiescence gate. A new spec is only
+# published when all 16 agents report "idle" at the current generation —
+# otherwise a recovery republish races hosts still executing (or still
+# crashing out of) the old spec, and the fresh rendezvous times out before
+# they arrive (observed in the 2026-07-20 reboot drill: DEADLINE_EXCEEDED).
+state() { echo "$1 gen=$2 $(_ts)" | gcloud storage cp - "$PREFIX/state/w$WORKER" 2>/dev/null; }
+state idle "$gen"
+
 while true; do
     next=$(( gen + 1 ))
     if spec="$(gcloud storage cat "$PREFIX/spec-$next.env" 2>/dev/null)" \
        && [ -n "$spec" ]; then
         log "picked up spec-$next"
+        state running "$next"
         # A previous launcher should have exited; kill any straggler so two
         # trainings never share the chips (bracket trick: pkill won't match
         # its own command line).
@@ -66,6 +75,7 @@ while true; do
         log "spec-$next finished rc=$rc"
         echo "rc=$rc $(_ts)" | gcloud storage cp - "$PREFIX/done/$next.w$WORKER" 2>/dev/null
         gen=$next
+        state idle "$gen"
     else
         # Program over?
         if [ "$(gcloud storage cat "$CONTROL/ACTIVE_PROGRAM" 2>/dev/null | tr -d '[:space:]')" != "$PROGRAM" ]; then
