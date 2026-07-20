@@ -71,3 +71,23 @@ Attention weights are intentionally 3D — `wq/wk/wv: (d_emb, heads, head_dim)`,
 ## Contributing conventions (from README)
 
 Open an issue before significant changes; branch as `feat/<name>` or `fix/<name>` off `main`; include a minimal repro/validation script with functional changes.
+
+## Memory system + orchestration (imported from tinyaya-stage2-scale)
+
+Before any non-trivial task read, in order: `.claude/PLAN.md` → `.claude/PROGRESS.md`
+(top) → `.claude/VERIFY.md` → `.claude/memories.md`. Lifecycle hooks in
+`.claude/settings.json` inject these at SessionStart, log edits to PROGRESS.md,
+run VERIFY.md checks on Stop, and snapshot state before compaction. Quick capture
+from the prompt: `#progress …`, `#decision …`, `#plan …`; slash commands:
+`/recall /progress /remember /plan /verify /curate`.
+
+**Where to log:** decisions & gotchas → `memories.md` (`/remember`); work done →
+`PROGRESS.md` (automatic via hook, or `/progress`); goal changes → `PLAN.md`
+(`/plan`); done-criteria → `VERIFY.md`.
+
+**Long runs live in tmux, never in an agent session.** Workstation: `qrwatch`
+(`scripts/tpu/qr_watch.sh` — QR babysitter, log `/tmp/qr_watch.log`) and `sweep`
+(`scripts/tpu/sweep_runner.sh` — ordered runs-file executor, log
+`/tmp/sweep_runner.log`). TPU VMs: session `train` (`ops.sh attach|tail-logs`).
+Push events: `https://ntfy.sh/$NTFY_TOPIC` (topic in `.env`). Live metrics:
+https://wandb.ai/cataluna84/llm-architectures.
