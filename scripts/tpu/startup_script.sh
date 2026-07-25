@@ -47,21 +47,43 @@ echo "[startup] code=$CODE_TARBALL_URI  data-source=$DATA_SOURCE shards=$DATA_SH
 echo "[startup] total-train-steps=$TOTAL_TRAIN_STEPS per-device-bsz=${PER_DEVICE_BATCH_SIZE:-<default>} save-ckpt-dir=${SAVE_CKPT_DIR:-<none>}"
 
 # ----- 1. system deps -----
-# Retry loop: at boot, unattended-upgrades often holds the dpkg lock and the
-# Dpkg::Lock::Timeout option alone has been observed to lose the race (killed
-# startup on 2/16 v5e-64 workers via set -e). Never let apt be the reason a
-# worker misses the multi-host rendezvous.
-APT_OPTS=(-o Dpkg::Lock::Timeout=600)
-for _apt_try in $(seq 1 30); do
-    if sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" update -qq &&
-       sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y -qq \
-           tmux git curl ca-certificates build-essential; then
-        break
-    fi
-    echo "[startup] apt busy/failed (attempt $_apt_try/30); retrying in 30s"
-    sleep 30
-    [ "$_apt_try" -eq 30 ] && { echo "[startup] FATAL: apt never succeeded"; exit 1; }
+# Fast path: the TPU image already ships all of these, so the common boot skips
+# apt (and its dpkg lock) entirely. Only pay the cost when something is missing.
+_need_apt=0
+for _p in tmux git curl gcc; do
+    command -v "$_p" >/dev/null 2>&1 || _need_apt=1
 done
+
+if [ "$_need_apt" = "0" ]; then
+    echo "[startup] system deps already present — skipping apt"
+else
+    # unattended-upgrades grabs the dpkg lock at boot and holds it for minutes.
+    # Dpkg::Lock::Timeout alone does not save us: apt WAITS OUT the full timeout
+    # on every attempt, so the losing host burns 10+ min and misses the
+    # coordinator's readiness gate — which needs every host, so one straggler
+    # wastes the whole landing. Two v5e-32 landings died this way on 2026-07-25,
+    # a different host each time. Take the lock away before asking for it.
+    sudo systemctl stop unattended-upgrades.service apt-daily.service \
+        apt-daily-upgrade.service apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+    sudo pkill -TERM -f '/usr/bin/unattended-upgrade$' 2>/dev/null || true
+    sleep 5
+    # A killed upgrade can leave dpkg mid-transaction; idempotent repair.
+    sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a 2>/dev/null || true
+
+    # Retry loop kept as the backstop: never let apt be the reason a worker
+    # misses the multi-host rendezvous (it once killed startup on 2/16 workers).
+    APT_OPTS=(-o Dpkg::Lock::Timeout=120)
+    for _apt_try in $(seq 1 30); do
+        if sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" update -qq &&
+           sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y -qq \
+               tmux git curl ca-certificates build-essential; then
+            break
+        fi
+        echo "[startup] apt busy/failed (attempt $_apt_try/30); retrying in 30s"
+        sleep 30
+        [ "$_apt_try" -eq 30 ] && { echo "[startup] FATAL: apt never succeeded"; exit 1; }
+    done
+fi
 
 # ----- 2. uv (pip fallback if astral.sh is unreachable) -----
 if ! command -v uv >/dev/null 2>&1; then
@@ -95,6 +117,22 @@ cd "$REPO_DIR"
 "$UV" sync --extra jaxtpu
 
 # ----- 5. stage FineWeb10B token shards -----
+# Export HF_TOKEN from the tarball's .env before downloading: huggingface_hub
+# picks it up automatically, and unauthenticated Hub requests are rate-limited
+# hard enough to make a host miss the readiness gate. Read the same way the
+# coordinator reads NTFY_TOPIC. Never echoed — this is a credential.
+if [ -f "$REPO_DIR/.env" ]; then
+    _hf_token="$(grep -m1 '^HF_TOKEN=' "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+    if [ -n "$_hf_token" ]; then
+        export HF_TOKEN="$_hf_token"
+        export HUGGING_FACE_HUB_TOKEN="$_hf_token"
+        echo "[startup] HF_TOKEN loaded from .env (authenticated Hub requests)"
+    else
+        echo "[startup] WARNING: no HF_TOKEN in .env — Hub downloads will be rate-limited"
+    fi
+    unset _hf_token
+fi
+
 DATA_DIR="$REPO_DIR/nanogpt/fineweb10B"
 mkdir -p "$DATA_DIR"
 if [ ! -f "$DATA_DIR/.staged" ]; then
