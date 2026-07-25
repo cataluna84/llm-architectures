@@ -28,6 +28,9 @@ REPO_DIR="${REPO_DIR:-/opt/llm-architectures}"
 PROGRAM="${PROGRAM:?set PROGRAM (name for this program)}"
 RUNS_FILES="${RUNS_FILES:?set RUNS_FILES (space-separated, repo-relative)}"
 FRESH="${FRESH:-0}"
+# Host count for the coordinator's readiness/quiescence gates. Empty => the
+# coordinator defaults to 16 (v5e-64). Set to 8 for a v5e-32 slice.
+EXPECT_WORKERS="${EXPECT_WORKERS:-}"
 
 for rf in $RUNS_FILES; do
     [ -f "$REPO_ROOT/$rf" ] || { echo "FATAL: missing $rf"; exit 2; }
@@ -46,6 +49,7 @@ if [ "$FRESH" = "1" ]; then
     gcloud storage rm -r "$CONTROL/$PROGRAM" 2>/dev/null || true
 fi
 printf '%s\n' $RUNS_FILES | gcloud storage cp - "$CONTROL/$PROGRAM/program.list"
+[ -n "$EXPECT_WORKERS" ] && printf '%s' "$EXPECT_WORKERS" | gcloud storage cp - "$CONTROL/$PROGRAM/expect_workers"
 printf '%s' "$PROGRAM" | gcloud storage cp - "$CONTROL/ACTIVE_PROGRAM"
 
 echo "==> [3/4] refreshing code + starting agents on all workers"

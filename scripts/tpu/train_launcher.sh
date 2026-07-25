@@ -26,6 +26,11 @@ export PYTHONUNBUFFERED=1
 
 UV="$(command -v uv || echo /root/.local/bin/uv)"
 
+# Clear a stale libtpu lock a hard-killed prior process may have left behind: a
+# dead pid's lock makes jax fail init with "TPU already in use" / SliceBuilder
+# DEADLINE_EXCEEDED. Safe to remove — no live TPU process holds it at launch.
+rm -f /tmp/libtpu_lockfile 2>/dev/null || true
+
 echo "[$(date -Is)] launching $NANOGPT_ENTRYPOINT tag=$RUN_TAG steps=${NANOGPT_TOTAL_TRAIN_STEPS:-default} bsz=${NANOGPT_PER_DEVICE_BATCH_SIZE:-default} resume=${NANOGPT_RESUME_FROM_STEP:-0} seed=${NANOGPT_SEED:-0} peak_lr=${NANOGPT_OTHER_PEAK_LR:-default} mom_warmup=${NANOGPT_MUON_MOMENTUM_WARMUP_STEPS:-default}" | tee -a "$TRAIN_LOG"
 "$UV" run python -u "$NANOGPT_ENTRYPOINT" 2>&1 | tee -a "$TRAIN_LOG"
 rc=$?

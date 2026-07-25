@@ -50,8 +50,58 @@ case "$TRC_PROFILE" in
         DEFAULT_QR="nanogpt-v5e64-qr"
         DEFAULT_NODE="nanogpt-v5e64"
         ;;
+    v5e-64-uc1a)
+        # Same v5litepod-64 chip family as v5e-64-ew4b, in the US zone
+        # us-central1-a (the second v5e-64 TRC grant row). Drought-escape
+        # fallback when europe-west4-b has no capacity. Reuses the QR/node
+        # names (zone-scoped, so no conflict) to keep docs/scripts consistent.
+        ACCEL_TYPE="${ACCEL_TYPE:-v5litepod-64}"
+        ZONE="${ZONE:-us-central1-a}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv5-lite}"
+        DEFAULT_QR="nanogpt-v5e64-qr"
+        DEFAULT_NODE="nanogpt-v5e64"
+        ;;
+    v5e-32-ew4b)
+        # Half-size v5e slice (v5litepod-32 = 8 hosts x 4 chips = 32 chips) from
+        # the same 64-chip europe-west4-b grant. Easier to land during a v5e-64
+        # drought. Runs the baseline with auto-derived accum=2 (same 524288
+        # tok/step); commit needs EXPECT_WORKERS=8 + NANOGPT_VAL_MAX_BATCHES=50.
+        ACCEL_TYPE="${ACCEL_TYPE:-v5litepod-32}"
+        ZONE="${ZONE:-europe-west4-b}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv5-lite}"
+        DEFAULT_QR="nanogpt-v5e32-qr"
+        DEFAULT_NODE="nanogpt-v5e32"
+        ;;
+    v5e-32-uc1a)
+        # Half-size v5e slice in us-central1-a (second v5e grant row). See
+        # v5e-32-ew4b for the accum/worker/val notes.
+        ACCEL_TYPE="${ACCEL_TYPE:-v5litepod-32}"
+        ZONE="${ZONE:-us-central1-a}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv5-lite}"
+        DEFAULT_QR="nanogpt-v5e32-qr"
+        DEFAULT_NODE="nanogpt-v5e32"
+        ;;
+    v6e-64-ew4a)
+        # Newest-gen 64-chip v6e (Trillium) = 8 hosts x 8 chips, europe-west4-a.
+        # Needs the v6e runtime. CLOSEST match to the intended v5e-64 baseline:
+        # per-device 4 x 64 chips = 524288 tok/step at accum=1, VAL_MAX_BATCHES=25;
+        # only EXPECT_WORKERS=8 (8 hosts) and DEVICE_PEAK_FLOPS differ.
+        ACCEL_TYPE="${ACCEL_TYPE:-v6e-64}"
+        ZONE="${ZONE:-europe-west4-a}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv6e}"
+        DEFAULT_QR="nanogpt-v6e64-qr"
+        DEFAULT_NODE="nanogpt-v6e64"
+        ;;
+    v6e-64-ue1d)
+        # Same v6e-64 as v6e-64-ew4a, US zone us-east1-d.
+        ACCEL_TYPE="${ACCEL_TYPE:-v6e-64}"
+        ZONE="${ZONE:-us-east1-d}"
+        RUNTIME="${RUNTIME:-v2-alpha-tpuv6e}"
+        DEFAULT_QR="nanogpt-v6e64-qr"
+        DEFAULT_NODE="nanogpt-v6e64"
+        ;;
     *)
-        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-8-us, v6e-16-eu, v5e-64-ew4b)" >&2
+        echo "ERROR: unknown TRC_PROFILE '$TRC_PROFILE' (valid: v6e-8-eu, v6e-8-us, v6e-16-eu, v5e-64-ew4b, v5e-64-uc1a, v5e-32-ew4b, v5e-32-uc1a, v6e-64-ew4a, v6e-64-ue1d)" >&2
         exit 2
         ;;
 esac
