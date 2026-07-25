@@ -1,17 +1,19 @@
-# Full pretraining baseline on v5e-64 — 10,000 steps.
+# Full pretraining baseline on v5e-64 — 10,000 steps, the sweep-v2 composed
+# recipe. 10,000 x 524,288 = 5.24B tokens (~29 tok/param at ~181M params).
+# ~40 min train at 0.23 s/step + val/ckpt overhead; RUN_TIMEOUT_SECONDS=5400
+# leaves slack for compile and one preemption recovery.
 #
-# 10,000 x 524,288 = 5.24B tokens (~29 tokens/param at ~181M params, above
-# Chinchilla 20x). At the measured 0.23 s/step that is ~40 min of train time.
+# Recipe (docs/sweeps/v5e64-2026-07/report.md): LR 0.02, momentum warmup
+# 0.85->0.95/300, emblr 0.3, unemb 0.002, cwd 0.2, clip 0.5, betas 0.8/0.95,
+# warmup 1% (=100), ns_steps 5, mu_dtype f32, seed 0.
+# Schedule: DECIDED by the preflight-schedule A/B (2026-07-22). composed+WSD-0.65
+# = 3.3043 vs composed+cosine = 3.3250 at step 2446 (~13 sigma) -> WSD-0.65 wins.
+# W&B: wsd x49i7l9j, cosine pbrbss3e. Flags applied below:
+#   NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.65
 #
-# RUN_TIMEOUT_SECONDS=5400 (90 min): 40 min train + compile + deploy + slack
-# for one preemption recovery. The 3600s default is too tight here.
-#
-# WANDB_RUN_ID is FIXED so a preemption reboot rejoins this same W&B run
-# instead of forking a second one. SAVE_CKPT_DIR + resume=auto (the boot
-# default) are what make that recovery possible at all — without checkpoints
-# there is nothing to resume from.
-#
-# Only set NANOGPT_OTHER_PEAK_LR / NANOGPT_MUON_MOMENTUM_WARMUP_STEPS here if
-# the completed sweep overturns the defaults (peak 0.02, warmup 300).
+# Self-heal: resume=auto + fixed WANDB_RUN_ID + GCS checkpoints every 100
+# steps -> any relaunch (preemption reboot, coordinator restart) resumes
+# from the latest checkpoint into the SAME W&B run (path verified
+# 2026-07-20: write + all-16-host participation + resume 100->140).
 
-TOTAL_TRAIN_STEPS=10000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=5400 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-baseline-10k WANDB_RUN_NAME=v5e64-baseline-10k WANDB_RUN_ID=v5e64-baseline-10k-r1
+TOTAL_TRAIN_STEPS=10000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=100 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=5400 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.65 NANOGPT_RESUME_FROM_STEP=auto SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-baseline-10k WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=baseline WANDB_RUN_NAME=v5e64-baseline-10k WANDB_RUN_ID=v5e64-baseline-10k-r1

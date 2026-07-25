@@ -1,0 +1,5 @@
+# Full base-model eval (200 examples/task) on the 10k pretraining checkpoint —
+# the pre-SFT reference. Runs via the VM coordinator (multi-host). Logs to W&B
+# run eval-base-v5e32-10k (group eval). Results appear on the process-0 host and
+# in W&B; run_eval prints the coordinator success marker.
+NANOGPT_ENTRYPOINT=nanogpt/run_eval.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-usc1/nanogptjax/checkpoints/v5e32-baseline-10k/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_EVAL_MAX_EXAMPLES=200 NANOGPT_EVAL_MAX_NEW_TOKENS=256 NANOGPT_EVAL_LABEL=base RUN_TIMEOUT_SECONDS=3600 WANDB_RUN_GROUP=eval WANDB_JOB_TYPE=eval WANDB_RUN_NAME=eval-base-v5e32-10k WANDB_RUN_ID=eval-base-v5e32-10k

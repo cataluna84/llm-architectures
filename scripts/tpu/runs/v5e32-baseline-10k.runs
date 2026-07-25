@@ -1,0 +1,20 @@
+# Full pretraining baseline on v5e-32 (v5litepod-32 = 8 hosts x 4 chips) — the
+# drought-escape variant of v5e64-baseline-10k. Same sweep-v2 composed recipe,
+# same WSD-0.65 schedule, SAME 524,288 tokens/step: on 32 chips the code
+# auto-derives grad_accum_steps=2 (524288 // (4*32*2048)=2), so the loss
+# trajectory is comparable to the v5e-64 baseline. Only throughput/wall-clock
+# differ (half the chips, accum 2 -> ~2x step time, ~80 min for 10k).
+#
+# Topology deltas vs v5e64-baseline-10k.runs:
+#   NANOGPT_VAL_MAX_BATCHES=50   (was 25) -> keeps the 6,400-row val subset
+#                                            (50 * 4*32 = 6400)
+#   RUN_TIMEOUT_SECONDS=10800    (was 5400) -> 3h, room for the ~2x slower run
+#   COORDINATOR must start with  EXPECT_WORKERS=8  (default 16) or the readiness
+#                                & quiescence gates never close.
+#   SAVE_CKPT_DIR set to the WINNING zone's in-region bucket at commit time
+#     (llm-architectures-eu for ew4b, llm-architectures-usc1 for uc1a).
+#
+# Recipe (docs/sweeps/v5e64-2026-07/report.md): LR 0.02, momentum warmup
+# 0.85->0.95/300, emblr 0.3, unemb 0.002, cwd 0.2, clip 0.5, WSD-0.65.
+
+TOTAL_TRAIN_STEPS=10000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=100 NANOGPT_VAL_MAX_BATCHES=50 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=10800 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.65 NANOGPT_RESUME_FROM_STEP=auto SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=baseline WANDB_RUN_NAME=v5e32-baseline-10k-clean WANDB_RUN_ID=v5e32-baseline-10k-clean
