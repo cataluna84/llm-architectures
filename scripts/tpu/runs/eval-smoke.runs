@@ -2,4 +2,4 @@
 # feeding + gather path before the full run. Runs via the VM coordinator (the
 # proven multi-host launcher: agents start run_eval on all 8 hosts, jax rendezvous).
 # run_eval prints "Reached maximum training steps" so the coordinator marks it OK.
-NANOGPT_ENTRYPOINT=nanogpt/run_eval.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-usc1/nanogptjax/checkpoints/v5e32-baseline-10k/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_EVAL_MAX_EXAMPLES=16 NANOGPT_EVAL_MAX_NEW_TOKENS=128 NANOGPT_EVAL_LABEL=base-smoke RUN_TIMEOUT_SECONDS=1800 WANDB_RUN_GROUP=eval WANDB_JOB_TYPE=eval WANDB_RUN_NAME=eval-base-smoke WANDB_RUN_ID=eval-base-smoke
+NANOGPT_ENTRYPOINT=nanogpt/run_eval.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_EVAL_MAX_EXAMPLES=16 NANOGPT_EVAL_MAX_NEW_TOKENS=128 NANOGPT_EVAL_LABEL=base-smoke RUN_TIMEOUT_SECONDS=1800 WANDB_RUN_GROUP=eval WANDB_JOB_TYPE=eval WANDB_RUN_NAME=eval-base-smoke-clean WANDB_RUN_ID=eval-base-smoke-clean

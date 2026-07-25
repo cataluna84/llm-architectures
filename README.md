@@ -194,7 +194,35 @@ As of now without using any tricks, the training loss converges in around ~16 mi
 we have not included gradient accumulation, we have not used any tricks to improve the convergence. Still, 16 minutes is neither bad nor great.
 I am sure we can do it in under 5-8 minutes soon without using many tricks. 🤞
 
-We will soon add a table that will list down the runs with changes in code and performance improvements.
+### TPU baseline — 10k steps (2026-07-25)
+
+181M parameters (GQA, 16 layers, d=768, 8 Q heads / 4 KV heads), trained on
+FineWeb10B at **524,288 tokens/step** for 10,000 steps on a **v5e-32**
+(8 hosts x 4 chips, `grad_accum_steps=2`), bfloat16, Muon + AdamW.
+
+| Metric | Value |
+| --- | --- |
+| Best val loss | **3.1271** @ step 9919 |
+| MFU | 25.06% |
+| Throughput | 1,137,868 tok/s |
+| Step time (p50) | 0.4605 s |
+| Wall clock | 97.5 min |
+| Total tokens | 5.24B |
+| Total FLOPs | 5.696e18 |
+| HBM peak | 2.17 / 15.75 GiB |
+
+Recipe: peak LR 0.02, Muon momentum warmup 0.85→0.95 over 300 steps, embedding
+LR 0.3, unembedding LR 0.002, cautious weight decay 0.2, grad clip 0.5, WSD
+schedule with 0.65 warmdown fraction. Selected by a 43-run sweep — see
+[`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md).
+
+Base-model evals (200 examples/task, pre-SFT) are **at chance**: MMLU 0.230,
+ARC-easy 0.245, ARC-challenge 0.285, GSM8K 0.000 (chance 0.25, SE ±0.031). This
+is expected at 181M parameters and 5.2B tokens — the numbers are a pre-SFT floor
+to measure SFT against, not a capability claim.
+
+[W&B run](https://wandb.ai/cataluna84/llm-architectures/runs/v5e32-baseline-10k-clean) ·
+[eval run](https://wandb.ai/cataluna84/llm-architectures/runs/eval-base-v5e32-10k-clean)
 
 ## Contributing
 

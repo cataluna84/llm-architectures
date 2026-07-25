@@ -215,10 +215,59 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-warmup-100 | warmup | finished | 0 | 3.6086 | https://wandb.ai/cataluna84/llm-architectures/runs/08qlfo44 |
 | v5e64-warmup-300 | warmup | finished | 0 | 3.6743 | https://wandb.ai/cataluna84/llm-architectures/runs/ytpipyvn |
 
+## Baseline-10k — clean run (2026-07-25)
+
+Hand-written section; `sweep_report.py` does not emit it.
+
+The v5e-64 baseline was abandoned to a TRC spot drought (every landing reclaimed
+within minutes, never a stable window to write a first checkpoint). The clean
+baseline ran on **v5e-32 @ europe-west4-b** instead — 8 hosts x 4 chips, with
+`grad_accum_steps=2` auto-derived so tokens/step stays at 524,288 and the loss
+trajectory remains comparable.
+
+| Metric | Value |
+| --- | --- |
+| Best val loss | **3.1271** @ step 9919 |
+| MFU | 25.06% |
+| Throughput | 1,137,868 tok/s |
+| Step time p50 / p90 / p99 | 0.4605 / 0.4619 / 0.4630 s |
+| Train time | 97.5 min |
+| Total tokens | 5,242,880,000 |
+| Total FLOPs | 5.696e18 |
+| HBM peak | 2.17 / 15.75 GiB (13.8%) |
+| Loss spikes / diverged | 0 / no |
+| Shards consumed | 77 of 100 |
+
+Run: https://wandb.ai/cataluna84/llm-architectures/runs/v5e32-baseline-10k-clean
+
+**The DATA_SHARDS-60 caveat turned out to be a non-effect.** The earlier v5e-32
+baseline, whose final ~23% of training ran on repeated data, reached val
+3.127222; this clean run reached 3.127149. That is a difference of 0.00007 —
+far inside seed noise. The rerun made the number defensible rather than
+correcting it. `num_shards: 77` also confirms the sizing arithmetic: 10k steps
+consumes 77 shards, so `DATA_SHARDS=100` never wrapped and the old 60 would
+indeed have been exhausted near step 7,720.
+
 ## Downstream evals — base model (pre-SFT)
 
-> **Cleared 2026-07-24.** The earlier v5e-32 base-eval numbers were removed —
-> superseded by the clean **v5e-64** baseline-10k (`v5e64-baseline-10k-r1`),
-> which trains from step 0 without the DATA_SHARDS-60 tail-repeat caveat. This
-> section is re-populated from `nanogpt/run_eval.py` once the v5e-64 base evals
-> complete.
+200 examples/task via `nanogpt/run_eval.py` against the clean 10k checkpoint.
+
+| Task | Accuracy | Chance |
+| --- | --- | --- |
+| MMLU | 0.230 | 0.25 |
+| ARC-easy | 0.245 | 0.25 |
+| ARC-challenge | 0.285 | 0.25 |
+| GSM8K | 0.000 | ~0 |
+
+Run: https://wandb.ai/cataluna84/llm-architectures/runs/eval-base-v5e32-10k-clean
+
+**These are chance-level.** At n=200 the standard error is ±0.031, so every
+result sits within roughly 1 sigma of 0.25 — including ARC-challenge scoring
+above ARC-easy, which is noise rather than signal. A 181M-parameter model
+trained on 5.2B tokens showing no measurable benchmark capability is the
+expected outcome at this scale, not a defect. The value of these numbers is as
+a pre-SFT floor: they are the reference against which SFT's delta is measured.
+
+Known issue: `run_eval.py` logs complete metrics but does not exit cleanly, so
+its W&B runs show `state=failed` despite holding valid results. The coordinator
+judges the stage on log markers, so it passes; the non-zero exit is unfixed.
