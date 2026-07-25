@@ -214,3 +214,11 @@ Literature value: **min(300, 1% of steps)** — repo default (nanochat-ish)
 | v5e64-unemb-008 | unemb | finished | 0 | 3.6118 | https://wandb.ai/cataluna84/llm-architectures/runs/148ctrm4 |
 | v5e64-warmup-100 | warmup | finished | 0 | 3.6086 | https://wandb.ai/cataluna84/llm-architectures/runs/08qlfo44 |
 | v5e64-warmup-300 | warmup | finished | 0 | 3.6743 | https://wandb.ai/cataluna84/llm-architectures/runs/ytpipyvn |
+
+## Downstream evals — base model (pre-SFT)
+
+> **Cleared 2026-07-24.** The earlier v5e-32 base-eval numbers were removed —
+> superseded by the clean **v5e-64** baseline-10k (`v5e64-baseline-10k-r1`),
+> which trains from step 0 without the DATA_SHARDS-60 tail-repeat caveat. This
+> section is re-populated from `nanogpt/run_eval.py` once the v5e-64 base evals
+> complete.

@@ -29,11 +29,16 @@ stage through it** (user directive 2026-07-20).
 - [x] v5e64-lrsweep-020 (1000 steps): best val **3.5952 @ step 905**
 - [ ] v5e64-lrsweep-014 / -028 / -020-nomom
 - [ ] Momentum-warmup A/B decision (020 vs 020-nomom)
-- [ ] Full 10k-step run (`v5e64-baseline-10k`), ckpts ->
-      gs://llm-architectures-eu/nanogptjax/checkpoints/, resume-safe
+- [x] Full 10k-step baseline DONE 2026-07-23 on **v5e-32 @ us-central1-a**
+      (v5e-64 un-gettable — TRC drought): val **3.1272**, 25% MFU, 1.14M tok/s.
+      Caveat: tail ~23% on repeated data (DATA_SHARDS=60 bug -> fixed to 100).
+      ckpt gs://llm-architectures-usc1/.../v5e32-baseline-10k/. PR #1 commented.
+- [ ] Base-model evals: tasks/ harness (MMLU/ARC/GSM8K/HumanEval) on the 10k ckpt
 - [ ] SFT: sft_dataloader.py -> train_sft.py via NANOGPT_ENTRYPOINT, params from
       the 10k checkpoint
-- [ ] Post-run: docs/training.md, README benchmarking table, results on PR #1
+- [ ] Post-run docs: docs/training.md + README benchmarking table (PR #1 comment
+      done; report/README files still to update)
+- [ ] Optional: clean re-run (step 0, 100 shards) for a pristine non-repeated number
 
 ## Invariants
 
