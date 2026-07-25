@@ -218,3 +218,6 @@ _artifacts/
 # Rendered Mermaid output (.mmd sources are checked in)
 .claude/orchestration/diagrams/svg/
 .claude/orchestration/diagrams/png/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
