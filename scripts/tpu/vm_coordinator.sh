@@ -17,7 +17,7 @@ REPO_DIR="${REPO_DIR:-/opt/llm-architectures}"
 CONTROL="${CONTROL:-gs://llm-architectures-eu/nanogptjax/control}"
 TRAIN_LOG="/tmp/train.log"
 COORD_LOG="/tmp/coordinator.log"
-EXPECT_WORKERS="${EXPECT_WORKERS:-16}"
+EXPECT_WORKERS="${EXPECT_WORKERS:-}"   # resolved below from control plane
 RUN_TIMEOUT_SECONDS_DEFAULT="${RUN_TIMEOUT_SECONDS:-3600}"
 HEARTBEAT_EVERY_S="${HEARTBEAT_EVERY_S:-1800}"
 
@@ -38,19 +38,45 @@ case "$PROGRAM" in
 esac
 PREFIX="$CONTROL/$PROGRAM"
 
+# Ship the coordinator log to GCS. Called from both gates and every heartbeat.
+# Previously this happened ONLY inside the heartbeat loop, which runs after the
+# readiness gate closes — so a stall before that point left nothing in GCS at
+# all (2026-07-25: a landing came up 7/8, stalled the gate, was preempted, and
+# left no journal/heartbeat/log to diagnose from). Landings are the scarce
+# resource in a drought; every one must leave evidence.
+push_log() { gcloud storage cp "$COORD_LOG" "$PREFIX/logs/coordinator.log" 2>/dev/null || true; }
+# Every script-controlled exit ships the log, including the ABORT paths below
+# (missing runs file, run failure, run timeout) which previously exited silent.
+trap push_log EXIT
+
+# Worker count: env override > control-plane file > default 16. An 8-host
+# v5e-32 slice needs 8 or the readiness & quiescence gates (which wait for
+# EXPECT_WORKERS) never close. Kept in GCS so self-heal reboots read it too.
+if [ -z "$EXPECT_WORKERS" ]; then
+    EXPECT_WORKERS="$(gcloud storage cat "$PREFIX/expect_workers" 2>/dev/null | tr -d '[:space:]')"
+fi
+EXPECT_WORKERS="${EXPECT_WORKERS:-16}"
+log "expect_workers=$EXPECT_WORKERS"
+
 # Test the alerting pipe BEFORE trusting it (the dead-pipe lesson: a silent
 # notifier is worse than none).
 notify "vm-coordinator: starting program '$PROGRAM' on $(hostname) $(_ts)"
 log "program=$PROGRAM prefix=$PREFIX ntfy=$([ -n "$NTFY_TOPIC" ] && echo on || echo OFF)"
 
 # ---- readiness gate: all agents booted ----
+# Log WHICH workers reported, not just how many: a stalled gate is almost always
+# one named host that never came up, and the missing id is the whole diagnosis.
 for _i in $(seq 1 60); do
-    n="$(gcloud storage ls "$PREFIX/boot/w*" 2>/dev/null | wc -l)"
-    log "readiness: $n/$EXPECT_WORKERS agents booted"
+    booted="$(gcloud storage ls "$PREFIX/boot/w*" 2>/dev/null | sed 's#.*/##' | sort -V | tr '\n' ' ')"
+    booted="${booted% }"
+    n="$(printf '%s' "$booted" | wc -w)"
+    log "readiness: $n/$EXPECT_WORKERS agents booted [$booted]"
+    push_log
     [ "$n" -ge "$EXPECT_WORKERS" ] && break
     if [ "$_i" -eq 60 ]; then
-        log "ABORT: agents never became ready"
-        notify "vm-coordinator ABORT: only $n/$EXPECT_WORKERS agents booted"
+        log "ABORT: agents never became ready — booted [$booted]"
+        push_log
+        notify "vm-coordinator ABORT: only $n/$EXPECT_WORKERS agents booted [$booted]"
         exit 1
     fi
     sleep 20
@@ -74,7 +100,7 @@ last_heartbeat=0
 heartbeat() {
     now=$(date +%s)
     echo "$(_ts) gen=$gen" | gcloud storage cp - "$PREFIX/heartbeat" 2>/dev/null
-    gcloud storage cp "$COORD_LOG" "$PREFIX/logs/coordinator.log" 2>/dev/null
+    push_log
     if [ $(( now - last_heartbeat )) -ge "$HEARTBEAT_EVERY_S" ]; then
         notify "vm-coordinator heartbeat: program=$PROGRAM gen=$gen $(_ts)"
         last_heartbeat=$now
@@ -96,6 +122,7 @@ wait_quiescent() { # current-gen
         sleep 20
     done
     log "ABORT: fleet never became quiescent at gen=$1"
+    push_log
     notify "vm-coordinator ABORT: fleet stuck — $n/$EXPECT_WORKERS idle at gen=$1"
     exit 1
 }
