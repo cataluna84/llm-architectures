@@ -1,0 +1,19 @@
+# SFT SMOKE (50 steps) on v5e-64 (v5litepod-64 = 16 hosts x 4 chips = 64 chips).
+# v5e-64 twin of sft-smoke.runs. Gate the epoch on this: as of 30afbf7 the SFT
+# path has still never completed a step on real hardware — the v5e-32 attempt
+# got as far as warm-start + compilation before libtpu tore the slice down.
+#
+# Topology deltas vs sft-smoke.runs (v5e-32):
+#   EXPECT_WORKERS must be 16 (not 8) or the coordinator's readiness and
+#     quiescence gates never close. Set it on launch_vm_program.sh.
+#   tokens/step = 4 x 2048 x 64 = 524,288 (train_sft hardcodes accum 1),
+#     DOUBLE the v5e-32 SFT value of 262,144.
+#   NANOGPT_VAL_MAX_BATCHES=10 (was 20) keeps roughly the same number of val
+#     rows, since global rows per batch doubles from 128 to 256.
+#
+# Data must be staged to NANOGPT_DATA_DIR on ALL 16 hosts before this runs —
+# make_grain_shard_loader globs the LOCAL filesystem and cannot read gs://:
+#   gcloud storage rsync -r gs://llm-architectures-eu/nanogptjax/sft_data \
+#       /opt/llm-architectures/nanogpt/sft_data     (worker=all)
+
+NANOGPT_ENTRYPOINT=nanogpt/train_sft.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_DATA_DIR=/opt/llm-architectures/nanogpt/sft_data TOTAL_TRAIN_STEPS=50 PER_DEVICE_BATCH_SIZE=4 NANOGPT_VAL_MAX_BATCHES=10 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=1800 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-sft-smoke WANDB_RUN_GROUP=sft WANDB_JOB_TYPE=sft-smoke WANDB_RUN_NAME=v5e64-sft-smoke WANDB_RUN_ID=v5e64-sft-smoke
