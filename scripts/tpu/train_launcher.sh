@@ -26,6 +26,26 @@ export PYTHONUNBUFFERED=1
 
 UV="$(command -v uv || echo /root/.local/bin/uv)"
 
+# Reap orphaned entrypoint processes from a previous crashed run. A libtpu
+# SLICE_FAILURE kills the controller but leaves the python workers alive holding
+# the TPU, so the NEXT launch cannot acquire it and libtpu reports
+# SLICE_FAILURE_FLAPPING_TASK_ERROR ~8s in, with no program ever loaded
+# ("Program fingerprint: n/a"). Observed on 14 of 16 v5e-64 hosts after three
+# crashed SFT attempts (2026-07-26); clearing them made the slice usable again
+# without a reboot.
+#
+# The bracketed regex is load-bearing: `pkill -f` matches full command lines, so
+# an unbracketed pattern also matches THIS script and the shell running it, and
+# the cleanup kills itself before reaping anything.
+_stale='nanogpt/train_sf[t].py|nanogpt/run_eva[l].py|nanogpt/trai[n].py'
+if pgrep -f "$_stale" >/dev/null 2>&1; then
+    echo "[$(date -Is)] reaping orphaned entrypoint procs from a prior run" | tee -a "$TRAIN_LOG"
+    pkill -f "$_stale" 2>/dev/null || true
+    sleep 3
+    pkill -9 -f "$_stale" 2>/dev/null || true
+    sleep 2
+fi
+
 # Clear a stale libtpu lock a hard-killed prior process may have left behind: a
 # dead pid's lock makes jax fail init with "TPU already in use" / SliceBuilder
 # DEADLINE_EXCEEDED. Safe to remove — no live TPU process holds it at launch.
