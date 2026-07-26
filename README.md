@@ -168,7 +168,9 @@ city park is a place to relax and enjoy the peace. The city also features a numb
 
 #### Midtrain/SFT
 
-After fine-tuning the model on a very small dataset (smoltalk, MMLU, ang GSM8K) for 500 steps, here are some results:
+Warm-started from the 10k pretraining checkpoint and fine-tuned for **one epoch**
+(844 steps, 442M tokens) on packed smoltalk + MMLU + GSM8K with completion-only
+loss. Best val **1.4365** at step 800, down from 1.596.
 
 ```
 prompt:
@@ -180,8 +182,17 @@ prompt:
 
 completion:
 
-Regular exercise enhances cognitive abilities, promoting cognitive strength, focus, and attention. It improves circulation and reduces symptoms of illness, such as exhaustion and muscle cramps. Additionally, regular exercise lowers your cholesterol level to preserve cardiovascular control while minimizing side effects (like
+Regular exercise offers numerous health benefits, particularly improved cardiovascular health and a longer lifespan. Research has shown that regular physical activity can improve cognitive function, enhance mood, and contribute to overall well-being. This could be particularly beneficial for individuals with chronic diseases or conditions that affect daily activities. Additionally, regular exercise can have a positive impact on mental health, reducing symptoms of depression and anxiety.<|assistant_end|>
 ```
+
+The model follows the instruction: three-plus sentences as asked, all three
+requested keywords present, and it emits `<|assistant_end|>` to stop rather than
+running on. Reproduce with:
+
+```bash
+NANOGPT_MODEL_TYPE=SFT NANOGPT_LOAD_PARAMS_CKPT_PATH=<ckpt>/params python nanogpt/inference.py
+```
+
 **Note:**
 
 1. For the base version (12 layers), we fine-tuned it on a small dataset (smoltalk, MMLU, GSM8K) with *completion-only* training.
@@ -223,6 +234,24 @@ to measure SFT against, not a capability claim.
 
 [W&B run](https://wandb.ai/cataluna84/llm-architectures/runs/v5e32-baseline-10k-clean) ·
 [eval run](https://wandb.ai/cataluna84/llm-architectures/runs/eval-base-v5e32-10k-clean)
+
+### SFT (one epoch, v5e-64)
+
+| Metric | Value |
+| --- | --- |
+| Best val loss | **1.4365** @ step 800 |
+| Steps / tokens | 844 (one epoch) / 442M |
+| MFU / throughput | 26.5% / 2,405,515 tok/s |
+| Wall clock | 6.3 min |
+
+Post-SFT evals are unchanged within noise (MMLU 0.210, ARC-e 0.200, ARC-c 0.260,
+GSM8K 0.000; SE ±0.031 at n=200) — expected at this scale, since SFT teaches
+format rather than knowledge. The measurable change is the loss and the
+generation behaviour shown above.
+
+Sweep methodology and the per-knob effect sizes behind this recipe:
+[`docs/training.md`](docs/training.md) and
+[`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md).
 
 ## Contributing
 
