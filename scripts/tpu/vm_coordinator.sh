@@ -194,9 +194,24 @@ for rf in "${RUNS_FILES[@]}"; do
             fi
             if echo "$status" | grep -q 'exited with status'; then
                 best="$(run_best_loss "$tag")"
-                if echo "$status" | grep -q 'Reached maximum training steps' \
-                   && ! echo "$status" | grep -qE 'exited with status [^0]'; then
-                    log "$key OK — ${best:-no val loss}"
+                # The EXIT STATUS is authoritative, not the max-steps marker.
+                #
+                # A run that ends by exhausting its data exits 0 and never prints
+                # "Reached maximum training steps". Requiring that marker recorded
+                # the SUCCESSFUL 844-step SFT epoch (val 1.4365) as an ABORT, and
+                # in a multi-stage program that stops every later stage after one
+                # that actually worked (2026-07-26). This is not an edge case: for
+                # SFT, "one epoch" is data-bound by definition.
+                #
+                # Which way we got there is logged so a run that exits 0 having
+                # done nothing is still visible rather than silently "OK".
+                if ! echo "$status" | grep -qE 'exited with status [^0]'; then
+                    if echo "$status" | grep -q 'Reached maximum training steps'; then
+                        why="reached max steps"
+                    else
+                        why="data-bound, exit 0 without max-steps marker"
+                    fi
+                    log "$key OK [$why] — ${best:-no val loss}"
                     notify "vm-coordinator: $key OK — ${best:-no val loss recorded}"
                     journal_add "$key"
                     break
