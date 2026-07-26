@@ -1,3 +1,4 @@
+import os
 import time
 import math
 from functools import partial
@@ -7,11 +8,9 @@ import numpy as np
 import jax.numpy as jnp
 from jax.sharding import Mesh
 
-from model import GPT, forward
-from model import precompute_frequencies
+from model import GPT
 from model import forward_infer
 from kvcache import KVCache, count_left_padding, prepare_chunk
-from kvcache import segment_ids_to_positions
 from checkpoint_utils import load_weights_from_checkpoint_with_validation
 from config import ShardingRules, Config, BATCH_AXIS_NAME
 
@@ -154,7 +153,10 @@ if __name__ == "__main__":
     sharding_rules = ShardingRules(batch=BATCH_AXIS_NAME)
     cfg = Config(mesh=mesh, rules=sharding_rules)
 
-    MODEL_TYPE = "pretrained"
+    # "pretrained" (raw continuation) or "SFT" (chat-formatted, stops on
+    # <|assistant_end|>). Env-selectable so the same script can sample either
+    # checkpoint without editing source.
+    MODEL_TYPE = os.environ.get("NANOGPT_MODEL_TYPE", "pretrained")
 
     print("Building GPT model based on the config...")
     model = GPT.init(jax.random.PRNGKey(0), cfg)
@@ -178,7 +180,9 @@ if __name__ == "__main__":
     if MODEL_TYPE == "pretrained":
         prompts = ["<|endoftext|>Did you hear the noise coming "] * len(devices)
         encoded = tokenizer.encode_batch(prompts, allowed_special="all")
-        input_ids, segment_ids = pad_tokens(encoded, pad_to_power_of_two=True)
+        input_ids, segment_ids = pad_tokens(
+            encoded, pad_id=PAD_ID, pad_to_power_of_two=True
+        )
         key = jax.random.PRNGKey(123)
         print("Warming up the model...")
 
@@ -218,7 +222,9 @@ if __name__ == "__main__":
             "<|endoftext|>Hear that?",
         ]
         encoded = tokenizer.encode_batch(prompts, allowed_special="all")
-        input_ids, segment_ids = pad_tokens(encoded, pad_to_power_of_two=True)
+        input_ids, segment_ids = pad_tokens(
+            encoded, pad_id=PAD_ID, pad_to_power_of_two=True
+        )
         key, subkey = jax.random.split(key)
 
         start = time.perf_counter()
@@ -263,12 +269,19 @@ if __name__ == "__main__":
                 ],
             }
         ]
+        # check_assistant_role=False is required here: an inference prompt ends
+        # at the user turn and has no assistant message yet, so the default
+        # training-time check returns None and this line dies with
+        # "TypeError: 'NoneType' object is not subscriptable".
         prompts = [
-            format_conversation(ex, tok_info)["text"] + assistant_start
+            format_conversation(ex, tok_info, check_assistant_role=False)["text"]
+            + assistant_start
             for ex in examples
         ]
         encoded = tokenizer.encode_batch(prompts, allowed_special="all")
-        input_ids, segment_ids = pad_tokens(encoded, pad_to_power_of_two=True)
+        input_ids, segment_ids = pad_tokens(
+            encoded, pad_id=PAD_ID, pad_to_power_of_two=True
+        )
         cache_key = jax.random.PRNGKey(1)
         batch_size = input_ids.shape[0]
         cache = KVCache.init(cache_key, cfg.mesh, cfg.rules, batch_size, cfg)

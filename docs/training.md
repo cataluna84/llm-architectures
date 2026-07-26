@@ -459,3 +459,85 @@ masking bug, but a numerical effect: in bf16, attending over the full 2048-slot 
 introduces enough extra flash-attention tiling/rescaling noise to break exact ties in logits and change greedy token
 selection. So the inference implementation is functionally correct, but exact greedy equivalence is only guaranteed with
 the compact active-KV path, not with the full-buffer masked cache path.
+# TPU sweep v2 — what actually moved
+
+43 runs on a v5litepod-64 (16 hosts x 4 chips, DDP, accum=1, bf16), 1,000 steps
+per arm unless noted. Invariants held across every run: **524,288 tokens/step**
+and a **6,400-row val subset**, with data order fixed so a seed change varies
+init only. Full per-axis tables: [`docs/sweeps/v5e64-2026-07/report.md`](sweeps/v5e64-2026-07/report.md).
+
+The noise floor came from a 3-seed arm: **sigma = 0.0016**, so the adoption bar
+is 2σ = 0.0032. Baseline arm (LR 0.02, momentum warmup on) = **3.5961** over
+n=3 seeds. Everything below is quoted against that.
+
+## Knobs that moved
+
+| Knob | Default -> adopted | Best val | Δ/σ |
+|---|---|---|---|
+| cautious weight decay | 0.01 -> **0.2** | 3.5733 | **-14.1σ** |
+| embedding LR | 0.2 -> **0.3** | 3.5892 | -4.3σ |
+| unembedding LR | 0.004 -> **0.002** | 3.5892 | -4.3σ |
+| grad clip | 1.0 -> **0.5** | 3.5908 | -3.3σ |
+| **all four composed** | — | **3.5671** (3 seeds, σ 0.0006) | **-18σ** |
+
+Cautious weight decay was the single largest mover and monotone over
+0.01 -> 0.1 -> 0.2 with 0.4 regressing, so 0.2 is an interior optimum rather
+than an edge. The composed config beats the best single knob (cwd-0.2, 3.5733)
+by ~3.9σ, so the gains compose rather than overlap.
+
+## Knobs that did not move (defaults stood)
+
+`accum`, Adam `b1`/`b2`, `mommax`, `momwu` alternatives (100/600 vs 300),
+`mu_dtype`, `ns_steps`, and LR `warmup` were all inside the 2σ bar. Two worth
+calling out: Adam betas were pure noise, so the literature "don't tune these"
+holds here; and extending LR warmup at a fixed horizon actively hurt.
+
+Momentum warmup itself is *on* in the baseline — the sweep only tested
+alternatives to the 300-step ramp, and none beat it. Its value was established
+separately (warmup on vs off, ~23σ), not in these tables.
+
+## Schedule: read the horizon before the sigma
+
+The report's `schedule` and `lr-horizon` rows show Δ/σ of -169σ and -148σ
+against the baseline. **Those are not knob effects.** Both arms ran 2,500 steps
+while the baseline ran 1,000, so the delta is dominated by training 2.5x longer.
+
+The honest comparison is at a matched horizon:
+
+| 2,500-step arm | best val |
+|---|---|
+| WSD, warmdown 0.65 | **3.3230** |
+| cosine (LR 0.02) | 3.3568 |
+
+WSD-0.65 vs cosine = **-0.0338, about -21σ** — still the largest single effect
+measured, but a quarter of what the cross-horizon number implies. At 2,500
+steps LR 0.020 (3.3568) and 0.028 (3.3563) are tied while 0.014 (3.3675) is
+worse, which is consistent with LR* ~ D^-0.32 and is why 0.02 was carried to
+the 10k horizon rather than something larger.
+
+## Final recipe
+
+Muon on hidden matrices, AdamW on embeddings/unembedding:
+
+```
+peak LR 0.02 | momentum warmup 0.85 -> 0.95 over 300 steps | momentum max 0.95
+ns_steps 5 | mu_dtype float32 | grad clip 0.5
+embedding LR 0.3 | unembedding LR 0.002 | Adam betas 0.8/0.95
+cautious weight decay 0.2 | plain weight decay 0.0
+WSD schedule, warmdown fraction 0.65 | LR warmup min(300, 1% of steps)
+```
+
+## Pipeline results with that recipe
+
+| Stage | Result |
+|---|---|
+| Pretraining, 10k steps, v5e-32 | val **3.1271** @ step 9919, 25.1% MFU, 1.14M tok/s |
+| Base evals (200 ex/task) | MMLU 0.230, ARC-e 0.245, ARC-c 0.285, GSM8K 0.000 |
+| SFT, 1 epoch, v5e-64 | val **1.4365** @ step 800, 26.5% MFU, 2.41M tok/s |
+| Post-SFT evals | MMLU 0.210, ARC-e 0.200, ARC-c 0.260, GSM8K 0.000 |
+
+The eval deltas are all inside noise (SE ±0.031 at n=200) and both models sit at
+chance on multiple choice. That is the expected outcome for 181M params on 5.2B
+tokens: SFT teaches format and turn-taking, which these accuracy benchmarks do
+not measure. The signal that did move is the loss (val 1.596 -> 1.4365) and the
+generation behaviour — see the SFT sample in the README.

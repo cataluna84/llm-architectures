@@ -1,0 +1,22 @@
+# Sweep v2, Stage 2d — failure envelope (3 runs, expect DIVERGED early-abort).
+#
+# Deliberately broken configs. Purpose is not the loss — it is the failure
+# *signatures* on this hardware: how divergence looks in train/grad_norm and
+# loss traces before it's obvious, so the diagnoser table gets real rows and
+# a 3am failure in a long run is recognizable in seconds.
+#
+# These runs also exercise the DIVERGED verdict path in sweep_runner end to
+# end (train.py exits cleanly with the marker; runner notifies + continues).
+# If a config *survives* 1000 steps, that is a finding too — the envelope is
+# wider than literature suggests on this hardware.
+#
+#  - fail-lr056: 2.8x the plateau LR (D^-0.32 lore says high LR + short
+#    horizon is survivable; is 2.8x?)
+#  - fail-noclip: clip effectively off at the aggressive LR — tests whether
+#    grad clipping is load-bearing here or a formality
+#  - fail-mom099: near-1 momentum with NO warmup — the exact config momentum
+#    warmup exists to protect against
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_OTHER_PEAK_LR=0.056 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-lr056
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_GRAD_CLIP_NORM=1000000000 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-noclip
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_MUON_MOMENTUM_MAX=0.99 NANOGPT_MUON_MOMENTUM_WARMUP_STEPS=0 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-mom099

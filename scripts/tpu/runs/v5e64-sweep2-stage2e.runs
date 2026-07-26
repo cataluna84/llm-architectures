@@ -1,0 +1,14 @@
+# Sweep v2, Stage 2e — bracket extensions (3 runs, 1000 steps).
+#
+# All three Stage-2 winners landed at the EDGE of their tested bracket, so
+# the optimum may lie beyond it. One more point each in the winning
+# direction:
+#   emblr:  0.1 (+10.3s) > 0.2 (base) > 0.3 (-4.3s)  -> test 0.45
+#   unemb:  0.008 (+9.8s) > 0.004 (base) > 0.002 (-4.3s) -> test 0.001
+#   cwd:    0.0 (+0.3s) ~ 0.01 (base) > 0.1 (-10.8s) -> test 0.2
+# If the extension beats the edge value by >2sigma, extend again; if it
+# regresses, the edge value is the plateau and goes into Stage 4 composition.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_EMBEDDING_LR=0.45 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=emblr WANDB_RUN_NAME=v5e64-emblr-045
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_UNEMBEDDING_LR=0.001 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=unemb WANDB_RUN_NAME=v5e64-unemb-001
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_CAUTIOUS_WD=0.2 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=cwd WANDB_RUN_NAME=v5e64-cwd-020

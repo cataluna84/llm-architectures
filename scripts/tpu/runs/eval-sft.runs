@@ -1,0 +1,21 @@
+# Post-SFT eval — the other half of the base-vs-SFT delta.
+#
+# Every knob that affects the score is IDENTICAL to eval-base.runs (200
+# examples/task, 256 new tokens, same tasks, same deterministic seed-42 shuffle,
+# greedy decoding). Only the checkpoint and the label differ. If you change one
+# of these, change it in both files or the delta stops meaning anything.
+#
+# Base reference (chance-level, as expected at 181M params / 5.2B tokens):
+#   MMLU 0.230 | ARC-easy 0.245 | ARC-challenge 0.285 | GSM8K 0.000
+#   https://wandb.ai/cataluna84/llm-architectures/runs/eval-base-v5e32-10k-clean
+#
+# Checkpoint is the best-val step of the 1-epoch SFT run (val 1.4365 @ step 800).
+# NOTE the SFT checkpoint layout is FLAT — <save_dir>/<step>/params — unlike the
+# pretraining checkpoints, which nest under the model run name
+# (<save_dir>/gqa_L16_D768_.../<step>/params).
+#
+# Known issue (not fatal): run_eval.py logs complete metrics but exits non-zero,
+# so its W&B run shows state=failed while holding valid results. The coordinator
+# judges on log markers, so the stage still passes.
+
+NANOGPT_ENTRYPOINT=nanogpt/run_eval.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-sft-1ep/800/params NANOGPT_EVAL_MAX_EXAMPLES=200 NANOGPT_EVAL_MAX_NEW_TOKENS=256 NANOGPT_EVAL_LABEL=sft RUN_TIMEOUT_SECONDS=3600 WANDB_RUN_GROUP=eval WANDB_JOB_TYPE=eval WANDB_RUN_NAME=eval-sft-v5e64-1ep WANDB_RUN_ID=eval-sft-v5e64-1ep

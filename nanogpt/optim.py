@@ -19,6 +19,13 @@ def build_optimizer(
     weight_decay: float = 0.0,
     cautious_weight_decay: float = 0.01,
     use_muon=True,
+    muon_momentum_min: float = 0.85,
+    muon_momentum_max: float = 0.95,
+    muon_momentum_warmup_steps: int = 300,
+    ns_steps: int = 5,
+    mu_dtype: str = "",
+    lr_schedule: str = "cosine",
+    wsd_warmdown_frac: float = 0.65,
 ):
     # nanochat's width scaling for AdamW groups: (d_model / 768) ** -0.5
     dmodel_lr_scale = (d_model / 768.0) ** -0.5
@@ -29,18 +36,35 @@ def build_optimizer(
 
     if use_muon:
         print("Using Muon Optimizer!")
-        other_peak_lr = max(other_peak_lr, 2e-2)
 
-    schedules = {
-        "embed": optax.constant_schedule(emb_lr),
-        "lm_head": optax.constant_schedule(unemb_lr),
-        "other": optax.warmup_cosine_decay_schedule(
+    if lr_schedule == "wsd":
+        # Warmup -> constant -> linear warmdown over the final
+        # wsd_warmdown_frac of training (nanochat's trapezoid). Their Run 7
+        # evidence: warmdown shape matters at longer horizons.
+        wu = max(1, warmup_steps)
+        warmdown_steps = max(1, int(total_train_steps * wsd_warmdown_frac))
+        stable_steps = max(0, total_train_steps - wu - warmdown_steps)
+        other_schedule = optax.join_schedules(
+            [
+                optax.linear_schedule(other_min_lr, other_peak_lr, wu),
+                optax.constant_schedule(other_peak_lr),
+                optax.linear_schedule(other_peak_lr, other_min_lr, warmdown_steps),
+            ],
+            boundaries=[wu, wu + stable_steps],
+        )
+    else:
+        other_schedule = optax.warmup_cosine_decay_schedule(
             init_value=other_min_lr,
             peak_value=other_peak_lr,
             warmup_steps=warmup_steps,
             decay_steps=max(1, total_train_steps - warmup_steps),
             end_value=other_min_lr,
-        ),
+        )
+
+    schedules = {
+        "embed": optax.constant_schedule(emb_lr),
+        "lm_head": optax.constant_schedule(unemb_lr),
+        "other": other_schedule,
     }
 
     def _path_names(path):
@@ -125,9 +149,9 @@ def build_optimizer(
     muon_weight_dim_nums = make_weight_dim_nums(params)
     muon_wd_mask = weight_decay_mask_fn(params)
 
-    def make_adamw(lr_schedule, weight_decay=0.0):
+    def make_adamw(schedule_fn, weight_decay=0.0):
         return optax.adamw(
-            learning_rate=lr_schedule,
+            learning_rate=schedule_fn,
             b1=b1,
             b2=b2,
             eps=1e-10,  # for better stability like nanochat/modded-nanogpt
@@ -135,16 +159,40 @@ def build_optimizer(
             mu_dtype=jnp.float32,
         )
 
-    def make_muon(lr_schedule, weight_decay=0.0):
-        return optax.contrib.muon(
-            learning_rate=lr_schedule,
+    def make_muon(schedule_fn, weight_decay=0.0):
+        # nanochat-style momentum warmup: beta ramps muon_momentum_min ->
+        # muon_momentum_max over the first muon_momentum_warmup_steps optimizer
+        # steps. optax's muon only takes beta as a plain float, so the schedule
+        # goes through inject_hyperparams; warmup_steps=0 keeps the plain path
+        # (and the optim-state structure of checkpoints saved before this).
+        if muon_momentum_warmup_steps > 0:
+            factory = optax.inject_hyperparams(
+                optax.contrib.muon,
+                # ns_steps slices ns_coeffs at init time and must stay
+                # concrete; mu_dtype is a callable class that inject would
+                # otherwise wrap as a schedule; float32 because the
+                # injected-hyperparam dtype otherwise follows the bf16 params
+                # and would quantize the lr/beta schedules.
+                static_args=("ns_steps", "mu_dtype"),
+                hyperparam_dtype=jnp.float32,
+            )
+            beta = optax.linear_schedule(
+                init_value=muon_momentum_min,
+                end_value=muon_momentum_max,
+                transition_steps=muon_momentum_warmup_steps,
+            )
+        else:
+            factory = optax.contrib.muon
+            beta = muon_momentum_max
+        return factory(
+            learning_rate=schedule_fn,
             ns_coeffs=(3.4445, -4.775, 2.0315),
-            ns_steps=5,
-            beta=b2,
+            ns_steps=ns_steps,
+            beta=beta,
             eps=1e-8,
             weight_decay=0.0,
             weight_decay_mask=muon_wd_mask,
-            mu_dtype=jnp.float32,
+            mu_dtype=jnp.dtype(mu_dtype) if mu_dtype else jnp.float32,
             nesterov=True,
             adaptive=False,
             adam_b1=b1,
@@ -174,4 +222,7 @@ def build_optimizer(
         param_labels,
     )
 
-    return tx
+    # Also return the per-group LR schedules so callers can log the current LR
+    # (e.g. wandb `train/lr`). `schedules["other"]` is the warmup-cosine schedule
+    # driving the main Muon group.
+    return tx, schedules

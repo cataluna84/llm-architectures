@@ -1,0 +1,16 @@
+# Sweep v2, Stage 3 — horizon-transfer check (3 runs, 2500 steps, ~11 min each).
+# The decision-critical stage for the 10k run.
+#
+# Optimal LR shrinks with token horizon (~D^-0.32; ICLR'25 "Scaling Optimal
+# LR Across Token Horizons"; same exponent for Muon per HyperP). Prediction at
+# 2.5x the proxy horizon: 028's standing degrades, 014's improves. If that
+# trend shows, 0.02 — horizon-matched to nanochat's ~5.5B tokens, which is
+# almost exactly the 10k run's 5.24B — locks for the 10k. If 028 still leads
+# at 2500, run a 0.024 tiebreak before the 10k.
+#
+# Compare at the common step (~905) AND at each run's own best step.
+# RUN_TIMEOUT_SECONDS raised: 2500 steps ≈ 10-11 min train + deploy slack.
+
+TOTAL_TRAIN_STEPS=2500 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=2700 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=lr-horizon WANDB_RUN_NAME=v5e64-h2500-020
+TOTAL_TRAIN_STEPS=2500 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=2700 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=lr-horizon WANDB_RUN_NAME=v5e64-h2500-028
+TOTAL_TRAIN_STEPS=2500 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=2700 NANOGPT_OTHER_PEAK_LR=0.014 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=lr-horizon WANDB_RUN_NAME=v5e64-h2500-014

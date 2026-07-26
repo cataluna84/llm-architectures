@@ -1,0 +1,18 @@
+# Checkpoint + resume smoke on v5e-64. Run this BEFORE any long run.
+#
+# Why this exists: as of 2026-07-20 no checkpoint had ever been written by this
+# codebase on TPU — gs://llm-architectures-eu/nanogptjax/checkpoints/ matched no
+# objects. The 10k baseline would otherwise be the first-ever save, on 16 hosts,
+# at minute ~4 of a 40-minute run. Orbax saves are collective: every host must
+# participate, so a multi-host save bug hangs the run rather than erroring
+# cleanly. Cheaper to find that out in 3 minutes.
+#
+# checkpoint_save_steps=100, so 120 steps writes exactly one checkpoint at
+# step 100 and then exits — enough to prove the write path.
+#
+# Step 2 of the smoke (run manually after this one): redeploy the SAME line
+# with NANOGPT_RESUME_FROM_STEP=auto and confirm the log says
+# "Auto-resume: latest checkpoint step = 100" and training starts at 100, not 0.
+# That validates the preemption self-heal the T3 auto-recycle policy assumes.
+
+TOTAL_TRAIN_STEPS=120 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=1800 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-ckpt-smoke WANDB_RUN_NAME=v5e64-ckpt-smoke

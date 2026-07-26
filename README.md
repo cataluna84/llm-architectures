@@ -1,4 +1,16 @@
-# nanoGPTJAX
+# llm-architectures
+
+A personal research base for building scalable LLM architectures from scratch in **pure JAX** — starting from nanoGPT and expanding toward MoE and RL post-training, with a Cloud TPU (v6e) launch/ops toolchain.
+
+> **Credits & attribution.** The nanoGPT implementation in this repository is **seeded from
+> [AakashKumarNain/nanoGPTJAX](https://github.com/AakashKumarNain/nanoGPTJAX)**. This is *not* a GitHub
+> fork — the code was copied and is being extended under a different scope. Full credit for the original
+> pure-JAX nanoGPT design and implementation goes to that project and its author; the original `LICENSE`
+> and `NOTICE` are preserved. See also the upstream links in [References](#references).
+
+---
+
+## nanoGPTJAX
 
 This project is inspired by Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT) and [nanochat](https://github.com/karpathy/nanochat), with one major difference: here we build everything from scratch in **pure JAX (on both GPUs and TPUs)**, avoiding higher-level third-party model/training libraries. This is not meant to start another PyTorch vs. JAX debate—I use both on a daily basis, and both are good in their own right. There are a few reasons I keep using JAX:
 
@@ -70,14 +82,34 @@ uv sync --all-extras
 python nanogpt/download_fineweb_tokens.py
 ```
 
-5. Train the model
+5. (Optional) Experiment tracking with Weights & Biases
+
+Training (`train.py`) and SFT (`train_sft.py`) log to [wandb.ai](https://wandb.ai)
+out of the box. Put your credentials in a `.env` at the repo root (gitignored):
+```
+WANDB_API_KEY=...          # from https://wandb.ai/authorize
+WANDB_PROJECT=llm-architectures
+WANDB_ENTITY=<your-username-or-team>
+```
+Logged per step: `train/loss`, `train/lr`, `perf/tokens_per_sec`,
+`perf/step_time_s`; per validation: `val/loss`, `val/best_loss`; and a
+leaderboard-shaped run summary (`total_training_time`, `total_training_flops`,
+`best_val_loss`). To turn it off or run locally, set one of:
+```
+WANDB_ENABLED=0            # fully off (no-op)
+WANDB_MODE=offline         # local-only, no network (view via `wandb sync` later)
+WANDB_MODE=disabled        # off, same as WANDB_ENABLED=0
+```
+Other knobs: `WANDB_RUN_NAME`, `WANDB_RUN_ID` (resume a run), `WANDB_LOG_INTERVAL`.
+
+6. Train the model
 ```
 # Pass the data dir path in the config file located at `nanogpt/config.py`
 # Change the hparams in the file if you want.
 python nanogpt/train.py
 ```
 
-6. (Optional) Fine-tune model on conversational dataset
+7. (Optional) Fine-tune model on conversational dataset
 ```
 # Prepare the SFT dataset. Change args if you want to
 python nanogpt/sft_dataloader.py
@@ -86,7 +118,7 @@ python nanogpt/sft_dataloader.py
 python nanogpt/train_sft.py
 ```
 
-7. Run inference by providing the checkpoint path
+8. Run inference by providing the checkpoint path
 ```
 # Change this in the config file. Load the checkpoint 
 # that is appropriate for the task (pretrain results/SFT results)
@@ -136,7 +168,9 @@ city park is a place to relax and enjoy the peace. The city also features a numb
 
 #### Midtrain/SFT
 
-After fine-tuning the model on a very small dataset (smoltalk, MMLU, ang GSM8K) for 500 steps, here are some results:
+Warm-started from the 10k pretraining checkpoint and fine-tuned for **one epoch**
+(844 steps, 442M tokens) on packed smoltalk + MMLU + GSM8K with completion-only
+loss. Best val **1.4365** at step 800, down from 1.596.
 
 ```
 prompt:
@@ -148,8 +182,17 @@ prompt:
 
 completion:
 
-Regular exercise enhances cognitive abilities, promoting cognitive strength, focus, and attention. It improves circulation and reduces symptoms of illness, such as exhaustion and muscle cramps. Additionally, regular exercise lowers your cholesterol level to preserve cardiovascular control while minimizing side effects (like
+Regular exercise offers numerous health benefits, particularly improved cardiovascular health and a longer lifespan. Research has shown that regular physical activity can improve cognitive function, enhance mood, and contribute to overall well-being. This could be particularly beneficial for individuals with chronic diseases or conditions that affect daily activities. Additionally, regular exercise can have a positive impact on mental health, reducing symptoms of depression and anxiety.<|assistant_end|>
 ```
+
+The model follows the instruction: three-plus sentences as asked, all three
+requested keywords present, and it emits `<|assistant_end|>` to stop rather than
+running on. Reproduce with:
+
+```bash
+NANOGPT_MODEL_TYPE=SFT NANOGPT_LOAD_PARAMS_CKPT_PATH=<ckpt>/params python nanogpt/inference.py
+```
+
 **Note:**
 
 1. For the base version (12 layers), we fine-tuned it on a small dataset (smoltalk, MMLU, GSM8K) with *completion-only* training.
@@ -162,7 +205,53 @@ As of now without using any tricks, the training loss converges in around ~16 mi
 we have not included gradient accumulation, we have not used any tricks to improve the convergence. Still, 16 minutes is neither bad nor great.
 I am sure we can do it in under 5-8 minutes soon without using many tricks. 🤞
 
-We will soon add a table that will list down the runs with changes in code and performance improvements.
+### TPU baseline — 10k steps (2026-07-25)
+
+181M parameters (GQA, 16 layers, d=768, 8 Q heads / 4 KV heads), trained on
+FineWeb10B at **524,288 tokens/step** for 10,000 steps on a **v5e-32**
+(8 hosts x 4 chips, `grad_accum_steps=2`), bfloat16, Muon + AdamW.
+
+| Metric | Value |
+| --- | --- |
+| Best val loss | **3.1271** @ step 9919 |
+| MFU | 25.06% |
+| Throughput | 1,137,868 tok/s |
+| Step time (p50) | 0.4605 s |
+| Wall clock | 97.5 min |
+| Total tokens | 5.24B |
+| Total FLOPs | 5.696e18 |
+| HBM peak | 2.17 / 15.75 GiB |
+
+Recipe: peak LR 0.02, Muon momentum warmup 0.85→0.95 over 300 steps, embedding
+LR 0.3, unembedding LR 0.002, cautious weight decay 0.2, grad clip 0.5, WSD
+schedule with 0.65 warmdown fraction. Selected by a 43-run sweep — see
+[`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md).
+
+Base-model evals (200 examples/task, pre-SFT) are **at chance**: MMLU 0.230,
+ARC-easy 0.245, ARC-challenge 0.285, GSM8K 0.000 (chance 0.25, SE ±0.031). This
+is expected at 181M parameters and 5.2B tokens — the numbers are a pre-SFT floor
+to measure SFT against, not a capability claim.
+
+[W&B run](https://wandb.ai/cataluna84/llm-architectures/runs/v5e32-baseline-10k-clean) ·
+[eval run](https://wandb.ai/cataluna84/llm-architectures/runs/eval-base-v5e32-10k-clean)
+
+### SFT (one epoch, v5e-64)
+
+| Metric | Value |
+| --- | --- |
+| Best val loss | **1.4365** @ step 800 |
+| Steps / tokens | 844 (one epoch) / 442M |
+| MFU / throughput | 26.5% / 2,405,515 tok/s |
+| Wall clock | 6.3 min |
+
+Post-SFT evals are unchanged within noise (MMLU 0.210, ARC-e 0.200, ARC-c 0.260,
+GSM8K 0.000; SE ±0.031 at n=200) — expected at this scale, since SFT teaches
+format rather than knowledge. The measurable change is the loss and the
+generation behaviour shown above.
+
+Sweep methodology and the per-knob effect sizes behind this recipe:
+[`docs/training.md`](docs/training.md) and
+[`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md).
 
 ## Contributing
 

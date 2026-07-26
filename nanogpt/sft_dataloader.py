@@ -360,7 +360,14 @@ def make_grain_shard_loader(
     shuffle_seed: int = 1234,
 ):
     packed_len = sequence_length + 1
-    shard_paths = list(Path(data_dir).glob(f"**/*{split}*.parquet"))
+    # str(), not PosixPath: grain's ParquetIterDataset ends up trying to iterate
+    # a Path and dies with "'PosixPath' object is not iterable" the moment the
+    # iterator is built. fineweb_dataloader.make_grain_shard_loader already does
+    # [str(p) for p in files] for the same reason.
+    # sorted(), because glob() returns filesystem order, which can differ between
+    # hosts. Every host in a multi-host slice must see the SAME shard list in the
+    # SAME order or the per-host data sharding silently diverges.
+    shard_paths = sorted(str(p) for p in Path(data_dir).glob(f"**/*{split}*.parquet"))
     print(f"Number of {split} files found: {len(shard_paths)}")
     paths_ds = grain.MapDataset.source(shard_paths)
     per_file = paths_ds.map(lambda p: grain.experimental.ParquetIterDataset(p))
@@ -394,11 +401,6 @@ def make_grain_shard_loader(
         grad_accum_steps * batch_size if grad_accum_steps > 1 else batch_size
     )
 
-    if multi_threading:
-        ds = grain.experimental.multithread_prefetch(
-            ds, num_threads=prefetch_threads, buffer_size=prefetch_buffer_size
-        )
-
     ds = ds.batch(total_batch_size, drop_remainder=True)
 
     if grad_accum_steps > 1:
@@ -407,6 +409,21 @@ def make_grain_shard_loader(
         )
     else:
         ds = ds.map(prepare_train_batch)
+
+    # Prefetch AFTER batching, never before. In grain 0.2.18, calling .batch()
+    # on the output of multithread_prefetch() corrupts the interleave cursor and
+    # the very first next() dies deep inside grain with
+    #   IndexError: list index out of range   (interleave.py, _iterators_in_use)
+    # Established by bisecting the pipeline against real shards:
+    #   batch only ................ OK
+    #   prefetch -> batch (before) . IndexError
+    #   batch -> prefetch (now) .... OK
+    # This is why the val loader (multi_threading=False) worked while the train
+    # loader never did. Prefetching whole batches is the better unit anyway.
+    if multi_threading:
+        ds = grain.experimental.multithread_prefetch(
+            ds, num_threads=prefetch_threads, buffer_size=prefetch_buffer_size
+        )
 
     if data_sharding is not None:
         ds = grain.experimental.device_put(

@@ -1,0 +1,16 @@
+# v5e-64 LR sweep — the three runs still outstanding.
+#
+# Run #1 of the original matrix (v5e64-lrsweep-020) COMPLETED 2026-07-20:
+#   best val 3.5952 @ step 905, exit 0. It is omitted here rather than
+#   re-run. The orchestrator missed its completion (probe truncation, fixed
+#   2026-07-20); the run itself was clean. See v5e64-lr.runs for the original
+#   matrix and .claude/orchestration/playbook/baseline-v5e64.md for results.
+#
+# Batch math: PER_DEVICE_BATCH_SIZE=4 x 64 chips x 2048 x accum 1 = 524,288
+# tokens/step = B_ref in a single micro-batch.
+# VAL_MAX_BATCHES=25 x 256 rows = the exact 6,400-row val subset of the
+# v6e-8 sweep, so losses stay comparable across both slices.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_OTHER_PEAK_LR=0.014 WANDB_RUN_NAME=v5e64-lrsweep-014
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_NAME=v5e64-lrsweep-028
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_MUON_MOMENTUM_WARMUP_STEPS=0 WANDB_RUN_NAME=v5e64-lrsweep-020-nomom

@@ -1,0 +1,26 @@
+# SFT — one epoch over the packed smoltalk + MMLU + GSM8K mixture, warm-started
+# from the clean 10k pretraining checkpoint (val 3.1271).
+#
+# STEP BUDGET is measured, not guessed. The prepared parquet holds
+#   567,195 rows / 447,626,349 train tokens
+#     smoltalk 459,880 rows / 400.1M tokens
+#     mmlu      99,842 rows /  38.3M tokens
+#     gsm8k      7,473 rows /   2.2M tokens
+# At 4 x 2048 x 32 devices, accum 1 = 262,144 tokens/step, one epoch is
+# 447,626,349 / 262,144 = 1,708 steps. Rounded to 1,700.
+#
+# Tokens/step here is HALF the 524,288 pretraining invariant because
+# train_sft.py hardcodes grad_accum_steps=1. That invariant exists to keep
+# PRETRAINING runs comparable; SFT is a separate stage and is not compared
+# against the sweep, so this is intentional rather than a violation.
+#
+# UNSWEPT: every SFT hyperparameter is a nanochat default — init_lr_frac 0.2,
+# final_lr_frac 0.0, AdamW (not Muon), completion-only loss. No sweep has been
+# run at this stage, so treat the first result as a data point, not a tuned
+# number. A mini-sweep is the obvious follow-up if it underwhelms.
+#
+# Data must be staged locally on EVERY host first — see sft-smoke.runs.
+# Run sft-smoke.runs before this: train_sft.py had never completed a single
+# step before d52fed9.
+
+NANOGPT_ENTRYPOINT=nanogpt/train_sft.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_DATA_DIR=/opt/llm-architectures/nanogpt/sft_data TOTAL_TRAIN_STEPS=1700 PER_DEVICE_BATCH_SIZE=4 NANOGPT_VAL_MAX_BATCHES=50 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=7200 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-sft-1ep WANDB_RUN_GROUP=sft WANDB_JOB_TYPE=sft WANDB_RUN_NAME=v5e32-sft-1ep WANDB_RUN_ID=v5e32-sft-1ep

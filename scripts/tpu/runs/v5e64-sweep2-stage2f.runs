@@ -1,0 +1,15 @@
+# Sweep v2, Stage 2f — second cwd extension + failure envelope (4 runs).
+#
+# cwd is still improving at every tested point: 0.01 (base) -> 0.1 (-10.8s)
+# -> 0.2 (-14.3s vs baseline, beats the 0.1 edge by 3.5s). One more doubling:
+# 0.4. If THAT still wins by >2s, the axis gets a proper mini-grid before
+# composition (something structural is going on, likely interacting with the
+# high-LR Muon updates); if it regresses, 0.2 is the plateau.
+#
+# Then the deliberate-failure probes (see stage2d header): these should
+# exercise the DIVERGED verdict path; a survivor is itself a finding.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_CAUTIOUS_WD=0.4 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=cwd WANDB_RUN_NAME=v5e64-cwd-040
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_OTHER_PEAK_LR=0.056 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-lr056
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_GRAD_CLIP_NORM=1000000000 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-noclip
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_MUON_MOMENTUM_MAX=0.99 NANOGPT_MUON_MOMENTUM_WARMUP_STEPS=0 WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=failenv WANDB_RUN_NAME=v5e64-fail-mom099

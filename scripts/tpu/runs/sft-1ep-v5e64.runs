@@ -1,0 +1,24 @@
+# SFT — one epoch on v5e-64 (16 hosts x 4 chips = 64 chips), warm-started from
+# the clean 10k pretraining checkpoint (val 3.1271). v5e-64 twin of sft-1ep.runs.
+#
+# STEP BUDGET is re-derived for this topology, not copied. The prepared parquet
+# holds 567,195 rows / 447,626,349 train tokens (smoltalk 459,880 / 400.1M,
+# mmlu 99,842 / 38.3M, gsm8k 7,473 / 2.2M). train_sft hardcodes accum 1, so
+#   tokens/step = 4 x 2048 x 64 = 524,288
+#   one epoch   = 447,626,349 / 524,288 = 854 steps
+# Rounded to 850. This is HALF the v5e-32 step count (1,700) for the same data,
+# because each step covers twice the tokens — copying 1700 across would train
+# two epochs by accident.
+#
+# EXPECT_WORKERS=16 on launch_vm_program.sh, or the gates never close.
+# NANOGPT_VAL_MAX_BATCHES=25 (v5e-32 used 50) keeps a comparable val row count
+# now that global rows per batch is 256 rather than 128.
+#
+# UNSWEPT: every SFT hyperparameter is a nanochat default — init_lr_frac 0.2,
+# final_lr_frac 0.0, AdamW (not Muon), completion-only loss. First result is a
+# data point, not a tuned number.
+#
+# Prerequisites: data staged on all 16 hosts (see sft-smoke-v5e64.runs), and
+# sft-smoke-v5e64.runs green first.
+
+NANOGPT_ENTRYPOINT=nanogpt/train_sft.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_DATA_DIR=/opt/llm-architectures/nanogpt/sft_data TOTAL_TRAIN_STEPS=850 PER_DEVICE_BATCH_SIZE=4 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=7200 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e64-sft-1ep WANDB_RUN_GROUP=sft WANDB_JOB_TYPE=sft WANDB_RUN_NAME=v5e64-sft-1ep WANDB_RUN_ID=v5e64-sft-1ep

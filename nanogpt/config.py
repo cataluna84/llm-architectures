@@ -1,3 +1,4 @@
+import os
 import warnings
 import jax
 import jax.numpy as jnp
@@ -6,6 +7,37 @@ from pathlib import Path
 from typing import Callable, Tuple, Optional
 from jax.sharding import Mesh
 from utils import jax_pytree_struct
+
+
+def _env_str(name: str, default: str) -> str:
+    """Return env var `name` if set and non-empty, else `default`."""
+    val = os.environ.get(name)
+    return val if val else default
+
+
+def _env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    return int(val) if val else default
+
+
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    return float(val) if val else default
+
+
+def _env_resume(name: str) -> int | str:
+    """Resume step: an int, or "auto" = latest checkpoint under the save dir."""
+    val = os.environ.get(name)
+    if not val:
+        return 0
+    return "auto" if val.strip().lower() == "auto" else int(val)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.environ.get(name)
+    if not val:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
 
 
 AxisName = str | tuple[str, ...] | None
@@ -253,11 +285,57 @@ class CheckpointConfig:
     # Checkpoint related
     max_checkpoints_to_keep: int = 5
     checkpoint_save_steps: int = 100
-    last_checkpoint_step: int = 0
-    # Directory where checkpoints will be saved
-    save_ckpt_dir: Path | str = ""
+    # Resume step for spot-preemption recovery (env: NANOGPT_RESUME_FROM_STEP).
+    # An int step under save_ckpt_dir/<run_name>/, "auto" = latest saved step
+    # (used by the boot path so preemption reboots self-heal), 0 = fresh start.
+    last_checkpoint_step: int | str = dataclasses.field(
+        default_factory=lambda: _env_resume("NANOGPT_RESUME_FROM_STEP")
+    )
+    # Directory where checkpoints will be saved (env: NANOGPT_SAVE_CKPT_DIR;
+    # may be a gs:// path when running on TPU).
+    save_ckpt_dir: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_SAVE_CKPT_DIR", "")
+    )
     # Path to params subdirectory within a checkpoint from which weights will be loaded
-    load_params_ckpt_path: Path | str = ""
+    load_params_ckpt_path: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_LOAD_PARAMS_CKPT_PATH", "")
+    )
+
+
+@dataclasses.dataclass
+class WandbConfig:
+    """Weights & Biases logging config, sourced from the environment/.env.
+
+    `enabled=False`, `mode="disabled"`, or a missing `WANDB_API_KEY` (in online
+    mode) all make `init_wandb` return a silent no-op run.
+    """
+
+    enabled: bool = dataclasses.field(
+        default_factory=lambda: _env_bool("WANDB_ENABLED", True)
+    )
+    project: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_PROJECT", "llm-architectures")
+    )
+    entity: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_ENTITY", "")
+    )
+    # "online" (default), "offline" (local-only), or "disabled".
+    mode: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_MODE", "online")
+    )
+    # Optional overrides. run_id + resume="allow" continues a previous run
+    # (handy when resuming from a checkpoint).
+    run_name: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_RUN_NAME", "")
+    )
+    run_id: str = dataclasses.field(
+        default_factory=lambda: _env_str("WANDB_RUN_ID", "")
+    )
+    dir: str = dataclasses.field(default_factory=lambda: _env_str("WANDB_DIR", ""))
+    # Log training metrics every N steps (validation always logs on its cadence).
+    log_interval: int = dataclasses.field(
+        default_factory=lambda: _env_int("WANDB_LOG_INTERVAL", 1)
+    )
 
 
 @dataclasses.dataclass
@@ -275,6 +353,22 @@ class HyperParams:
     other_peak_lr: float = 0.02
     b1: float = 0.8
     b2: float = 0.95
+    # Muon momentum warmup (nanochat: linear 0.85 -> 0.95 over the first 300
+    # optimizer steps, absolute regardless of run length). warmup_steps = 0
+    # disables the schedule and uses a plain constant beta = muon_momentum_max.
+    muon_momentum_min: float = 0.85
+    muon_momentum_max: float = 0.95
+    muon_momentum_warmup_steps: int = 300
+    # Muon Newton-Schulz iterations (optax default 5) and momentum-buffer
+    # dtype ("" = optax default, or "float32"/"bfloat16").
+    ns_steps: int = 5
+    mu_dtype: str = ""
+    # LR schedule shape for the Muon group: "cosine" (warmup-cosine-decay,
+    # the original) or "wsd" (warmup -> constant -> linear decay to min_lr,
+    # nanochat-style). wsd_warmdown_frac = fraction of total steps spent in
+    # the final linear decay (nanochat default 0.65, their Run 7 used 0.85).
+    lr_schedule: str = "cosine"
+    wsd_warmdown_frac: float = 0.65
     weight_decay: float = 0.0
     cautious_weight_decay: float = 0.01
     grad_clip_norm: float = 1.0
@@ -286,8 +380,74 @@ class HyperParams:
     final_lr_frac: float = 0.0
 
     # Other
+    # PRNG seed for parameter init (env: NANOGPT_SEED). Data order is seeded
+    # separately by the loaders, so varying this isolates init variance while
+    # keeping batch composition identical across seed runs.
+    init_seed: int = 0
     es_patience: int = 500
     val_interval: int = 50
+    # Cap batches per validation pass (0 = full val set). Validation runs at
+    # every shard boundary, so an uncapped pass over the whole val shard
+    # (~1.5k batches) adds ~1min x ~53 shards to a full run. 200 batches
+    # (~13M tokens, always the same deterministic subset) keeps the metric
+    # comparable across passes at ~8s each.
+    val_max_batches: int = 200
+
+    def __post_init__(self):
+        # Env overrides let the TPU startup script select a smoke-sized run
+        # (e.g. NANOGPT_TOTAL_TRAIN_STEPS=50) or shrink the per-device batch on
+        # OOM without editing code. Training math is unchanged; warmup tracks
+        # total steps unless explicitly overridden.
+        self.per_device_batch_size = _env_int(
+            "NANOGPT_PER_DEVICE_BATCH_SIZE", self.per_device_batch_size
+        )
+        self.total_train_steps = _env_int(
+            "NANOGPT_TOTAL_TRAIN_STEPS", self.total_train_steps
+        )
+        self.warmup_steps = _env_int(
+            "NANOGPT_WARMUP_STEPS", int(min(300, 0.01 * self.total_train_steps))
+        )
+        self.val_max_batches = _env_int("NANOGPT_VAL_MAX_BATCHES", self.val_max_batches)
+        # LR-sweep / momentum-warmup knobs (see docs/training.md).
+        self.other_peak_lr = _env_float("NANOGPT_OTHER_PEAK_LR", self.other_peak_lr)
+        self.muon_momentum_warmup_steps = _env_int(
+            "NANOGPT_MUON_MOMENTUM_WARMUP_STEPS", self.muon_momentum_warmup_steps
+        )
+        # Sweep-v2 knobs: per-group AdamW LRs, cautious WD, Adam betas, init
+        # seed. Betas have overrides but are deliberately not in the sweep
+        # matrix (nanochat's ablations show both directions regress).
+        self.embedding_lr = _env_float("NANOGPT_EMBEDDING_LR", self.embedding_lr)
+        self.unembedding_lr = _env_float(
+            "NANOGPT_UNEMBEDDING_LR", self.unembedding_lr
+        )
+        self.cautious_weight_decay = _env_float(
+            "NANOGPT_CAUTIOUS_WD", self.cautious_weight_decay
+        )
+        self.b1 = _env_float("NANOGPT_ADAM_B1", self.b1)
+        self.b2 = _env_float("NANOGPT_ADAM_B2", self.b2)
+        self.init_seed = _env_int("NANOGPT_SEED", self.init_seed)
+        # Phase-A knobs: momentum bounds, clip, decay floor, Muon internals,
+        # and LR schedule shape ("cosine" | "wsd").
+        self.muon_momentum_min = _env_float(
+            "NANOGPT_MUON_MOMENTUM_MIN", self.muon_momentum_min
+        )
+        self.muon_momentum_max = _env_float(
+            "NANOGPT_MUON_MOMENTUM_MAX", self.muon_momentum_max
+        )
+        self.grad_clip_norm = _env_float(
+            "NANOGPT_GRAD_CLIP_NORM", self.grad_clip_norm
+        )
+        self.min_lr = _env_float("NANOGPT_MIN_LR", self.min_lr)
+        self.ns_steps = _env_int("NANOGPT_NS_STEPS", self.ns_steps)
+        self.mu_dtype = _env_str("NANOGPT_MU_DTYPE", self.mu_dtype)
+        self.lr_schedule = _env_str("NANOGPT_LR_SCHEDULE", self.lr_schedule)
+        self.wsd_warmdown_frac = _env_float(
+            "NANOGPT_WSD_WARMDOWN_FRAC", self.wsd_warmdown_frac
+        )
+        if self.lr_schedule not in ("cosine", "wsd"):
+            raise ValueError(
+                f"NANOGPT_LR_SCHEDULE must be 'cosine' or 'wsd', got {self.lr_schedule!r}"
+            )
 
 
 @jax_pytree_struct
@@ -298,4 +458,9 @@ class Config:
     model: ModelConfig = dataclasses.field(default_factory=ModelConfig)
     hparams: HyperParams = dataclasses.field(default_factory=HyperParams)
     ckpt_cfg: CheckpointConfig = dataclasses.field(default_factory=CheckpointConfig)
-    data_dir: Path | str = "fineweb10B/"
+    wandb: WandbConfig = dataclasses.field(default_factory=WandbConfig)
+    # Env: NANOGPT_DATA_DIR — absolute path to the FineWeb *.bin shards on the
+    # TPU VM (the download script writes to nanogpt/fineweb10B/).
+    data_dir: Path | str = dataclasses.field(
+        default_factory=lambda: _env_str("NANOGPT_DATA_DIR", "fineweb10B/")
+    )

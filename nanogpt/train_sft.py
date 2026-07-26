@@ -1,32 +1,50 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# Set some GPU FLAGS
 
-os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-os.environ["NCCL_NVLS_ENABLE"] = "1"
-os.environ.update(
-    {
-        "NCCL_LL128_BUFFSIZE": "-2",
-        "NCCL_LL_BUFFSIZE": "-2",
-        "NCCL_PROTO": "SIMPLE,LL,LL128",
-    }
-)
-os.environ["XLA_FLAGS"] = (
-    "--xla_gpu_triton_gemm_any=True "
-    "--xla_gpu_enable_latency_hiding_scheduler=true "
-    "--xla_gpu_enable_pipelined_all_reduce=true "
-    "--xla_gpu_enable_pipelined_all_gather=true "
-    "--xla_gpu_enable_pipelined_reduce_scatter=true "
-    "--xla_gpu_enable_while_loop_double_buffering=true "
-    "--xla_gpu_enable_pipelined_p2p=true "
-    "--xla_gpu_collective_permute_decomposer_threshold=1024 "
-)
+# GPU-specific NCCL/XLA flags. Skipped on TPU (startup_script.sh sets
+# NANOGPT_TPU=1) since these --xla_gpu_* / NCCL knobs don't apply there.
+# This guard mirrors train.py and is load-bearing: exporting GPU XLA_FLAGS on a
+# TPU host made JAX bring up a CPU backend alongside the TPU one, and with
+# jax.distributed initialized that CPU backend does a cross-process topology
+# exchange which nothing else joins — every host then died with
+#   INTERNAL: Getting local topologies failed:
+#   GetKeyValue() timed out with key: cpu:local_topology/cpu/N ... duration: 2m
+# followed by a Shutdown barrier timeout and exit 134 (2026-07-26).
+if os.environ.get("NANOGPT_TPU") != "1":
+    os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+    os.environ["NCCL_NVLS_ENABLE"] = "1"
+    os.environ.update(
+        {
+            "NCCL_LL128_BUFFSIZE": "-2",
+            "NCCL_LL_BUFFSIZE": "-2",
+            "NCCL_PROTO": "SIMPLE,LL,LL128",
+        }
+    )
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_triton_gemm_any=True "
+        "--xla_gpu_enable_latency_hiding_scheduler=true "
+        "--xla_gpu_enable_pipelined_all_reduce=true "
+        "--xla_gpu_enable_pipelined_all_gather=true "
+        "--xla_gpu_enable_pipelined_reduce_scatter=true "
+        "--xla_gpu_enable_while_loop_double_buffering=true "
+        "--xla_gpu_enable_pipelined_p2p=true "
+        "--xla_gpu_collective_permute_decomposer_threshold=1024 "
+    )
 import warnings
 import logging
 import time
 from functools import partial
 
 import jax
+
+# Multi-host TPU slices (v5e-32 = 8 hosts x 4 chips, v5e-64 = 16 x 4) need the
+# distributed runtime up BEFORE anything touches the backend — model.py queries
+# jax.default_backend() at import time below. Harmless on single host
+# (initializes a 1-process cluster). Mirrors train.py.
+if os.environ.get("NANOGPT_TPU") == "1":
+    try:
+        jax.distributed.initialize()
+    except Exception as _exc:
+        print(f"[dist] jax.distributed.initialize() skipped: {_exc}")
 
 jax.config.update("jax_optimization_level", "O1")
 
@@ -43,6 +61,12 @@ from utils import logical_to_sharding
 from checkpoint_utils import load_weights_from_checkpoint_with_validation
 from config import ShardingRules, Config, BATCH_AXIS_NAME
 from sft_dataloader import make_grain_shard_loader, build_tokenizer
+from wandb_logger import (
+    load_dotenv,
+    init_wandb,
+    device_peak_flops,
+    transformer_flops_per_token,
+)
 
 
 logging.getLogger("absl").setLevel(logging.ERROR)
@@ -52,6 +76,29 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*CheckpointMan
 jitted_precompute_frequencies = jax.jit(
     precompute_frequencies, static_argnames=("features", "theta", "dtype")
 )
+
+
+def host_local_to_global(sharding, buf, local_rows, batch_dim=0):
+    """Ship this host's row-slice of the global batch to its local devices.
+
+    Every process runs the identical data pipeline over the same shard list in
+    the same order, so `buf` holds the full global batch on every host; each
+    host transfers only its own block of `local_rows` along `batch_dim`.
+
+    Without this, a host-local array gets device_put against a sharding that
+    spans devices the process does not own. The collectives then never match,
+    every core parks in Vwait on a sync flag that never arrives, and libtpu
+    eventually kills the slice with SLICE_FAILURE_SW_INJECT_ERROR (signal 6,
+    exit 134). That killed a v5e-32 and reproduced identically on a fresh
+    v5e-64 on 2026-07-26 — it is a missing multi-host port, not bad hardware.
+
+    Unlike train.py's copy this does NOT force int32: completion_mask is bool
+    and optax's `where=` needs it to stay that way.
+    """
+    buf = np.asarray(buf)
+    idx = (slice(None),) * batch_dim + (local_rows,)
+    local = np.ascontiguousarray(buf[idx])
+    return jax.make_array_from_process_local_data(sharding, local, buf.shape)
 
 
 def compute_loss(params, x_batch, y_batch, segment_ids, freqs, loss_mask):
@@ -150,6 +197,10 @@ def model_run_name(cfg):
 
 
 def main():
+    # Seed os.environ from .env (WANDB_*, etc.) before building the config,
+    # which reads those values at construction time.
+    load_dotenv()
+
     # Get the mesh, sharding rules, amd the config
     devices = np.array(jax.devices())
     print("Number of devices found:", len(devices))
@@ -162,6 +213,12 @@ def main():
     seqlen = cfg.model.seqlen
     head_dim = cfg.model.attn.head_dim
     data_sharding = logical_to_sharding(("batch",), cfg.mesh, cfg.rules)
+    # Multi-host: jax.devices() orders devices by process, so this host owns the
+    # contiguous row block [process_index*local_bsz, ...) of every global batch.
+    local_bsz = per_device_bsz * jax.local_device_count()
+    local_rows = slice(
+        jax.process_index() * local_bsz, (jax.process_index() + 1) * local_bsz
+    )
     max_lr = cfg.hparams.max_lr
     min_lr = 0.01 * max_lr
     grad_accum_steps = 1
@@ -170,6 +227,9 @@ def main():
     checkpoint_save_steps = cfg.ckpt_cfg.checkpoint_save_steps
 
     tok_info = build_tokenizer()
+    # data_sharding=None below: the loader must yield HOST numpy batches. Letting
+    # grain device_put them against the global sharding is precisely what
+    # deadlocked the slice; host_local_to_global does the placement instead.
     train_dl = make_grain_shard_loader(
         data_dir=cfg.data_dir,
         split="train",
@@ -177,7 +237,7 @@ def main():
         batch_size=bsz,
         sequence_length=seqlen,
         grad_accum_steps=1,
-        data_sharding=data_sharding,
+        data_sharding=None,
         multi_threading=True,
     )
     train_iter = iter(train_dl)
@@ -192,7 +252,7 @@ def main():
         batch_size=bsz,
         sequence_length=seqlen,
         grad_accum_steps=1,
-        data_sharding=data_sharding,
+        data_sharding=None,
         cycle_length=1,
         multi_threading=False,
     )
@@ -207,12 +267,17 @@ def main():
     )
     print("Weights loaded from the checkpoint successfully!")
 
-    # Optimizer
+    # Optimizer (constant LR for SFT)
+    sft_lr = 1e-4
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
-        optax.adamw(learning_rate=1e-4),
+        optax.adamw(learning_rate=sft_lr),
     )
     optim_state = optim.init(model)
+
+    # Constant schedule mirror so wandb `train/lr` matches the pretrain interface.
+    def lr_fn(_step):
+        return sft_lr
 
     #  Checkpointing
     options = ocp.CheckpointManagerOptions(
@@ -253,6 +318,37 @@ def main():
     print(line("Weight decay", cfg.hparams.weight_decay), "\n")
     print("-" * 75)
 
+    num_params = count_params(model)
+    run = init_wandb(
+        cfg,
+        model_run_name(cfg),
+        {
+            "attn_type": cfg.model.attn_type,
+            "window_pattern": cfg.model.window_pattern,
+            "num_layers": cfg.model.num_layers,
+            "d_emb": cfg.model.d_emb,
+            "q_heads": cfg.model.q_heads,
+            "kv_heads": cfg.model.kv_heads,
+            "head_dim": head_dim,
+            "seqlen": seqlen,
+            "vocab_size": cfg.model.vocab_size,
+            "num_params": num_params,
+            "per_device_batch_size": per_device_bsz,
+            "total_batch_size": bsz,
+            "grad_accum_steps": grad_accum_steps,
+            "lr": sft_lr,
+            "total_train_steps": total_train_steps,
+            "num_devices": len(devices),
+            "stage": "sft",
+        },
+    )
+
+    # Constants for MFU: FLOPs/token (dense + attention) and total device peak.
+    flops_per_token = transformer_flops_per_token(
+        num_params, cfg.model.num_layers, cfg.model.d_emb, seqlen
+    )
+    peak_flops_total = device_peak_flops() * len(devices)
+
     best_loss = float("inf")
     last_val_loss = float("inf")
     es_patience = cfg.hparams.es_patience
@@ -260,8 +356,18 @@ def main():
     best_step = 0
     num_shards_used = 0
     total_tokens_consumed = 0
+    # Train-only wall clock (excludes eval/logging) for the leaderboard summary.
+    total_train_step_time = 0.0
+    steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
 
-    step = cfg.ckpt_cfg.resume_from_step
+    # SFT always starts at step 0. It warm-starts from load_params_ckpt_path
+    # (params only, above) and never restores optimizer state — there is no
+    # mngr.restore on this path — so a mid-run resume would silently continue
+    # with a fresh optimizer, which is worse than redoing the work. A preempted
+    # SFT run simply reruns from the pretrained params.
+    # (`cfg.ckpt_cfg.last_checkpoint_step` / NANOGPT_RESUME_FROM_STEP drives
+    # pretraining resume only, and may be the string "auto", not a step index.)
+    step = 0
     print("Starting training (the first step will take some time for compilation...)\n")
 
     training_complete = False
@@ -271,10 +377,15 @@ def main():
         if training_complete:
             break
         start = time.time()
-        x, y = train_batch["x"], train_batch["y"]
-        segment_ids = train_batch["segment_ids"]
-        completion_mask = train_batch["completion_mask"]
-        positions = train_batch["positions"]
+
+        # Every host holds the full global batch; ship only our own rows.
+        def _g(key, _b=train_batch):
+            return host_local_to_global(data_sharding, _b[key], local_rows)
+
+        x, y = _g("x"), _g("y")
+        segment_ids = _g("segment_ids")
+        completion_mask = _g("completion_mask")
+        positions = _g("positions")
 
         with jax.set_mesh(cfg.mesh):
             freqs = jitted_precompute_frequencies(positions, head_dim)
@@ -290,9 +401,31 @@ def main():
         step += 1
         tokens_processed = bsz * seqlen * grad_accum_steps
         total_tokens_consumed += tokens_processed
+        total_train_step_time += dt
+        steps_this_run += 1
         tokens_per_sec = int(tokens_processed / dt)
+        # MFU = achieved FLOPs/s over device peak. ETA uses the average step time
+        # so far (the compile-heavy first step washes out within a few steps).
+        mfu = flops_per_token * tokens_per_sec / peak_flops_total
+        avg_step_time = total_train_step_time / steps_this_run
+        eta_minutes = max(total_train_steps - step, 0) * avg_step_time / 60.0
 
-        print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")  # fmt: off
+        print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens/s: {tokens_per_sec:>9,} | MFU: {mfu * 100:4.1f}% | ETA: {eta_minutes:6.1f} min")  # fmt: off
+
+        if (step % cfg.wandb.log_interval) == 0:
+            run.log(
+                {
+                    "train/loss": float(loss),
+                    "train/lr": float(lr_fn(step)),
+                    "perf/tokens_per_sec": tokens_per_sec,
+                    "perf/step_time_s": dt,
+                    "perf/mfu": mfu,
+                    "perf/total_tokens": total_tokens_consumed,
+                    "time/train_minutes": train_time_elapsed,
+                    "time/eta_minutes": eta_minutes,
+                },
+                step=step,
+            )
 
         if (step % options.save_interval_steps) == 0:
             mngr.save(
@@ -308,10 +441,14 @@ def main():
             val_steps_count = 0
             val_iter = iter(val_dl)
             for val_batch in val_iter:
-                val_x, val_y = val_batch["x"], val_batch["y"]
-                val_segment_ids = val_batch["segment_ids"]
-                val_completion_mask = val_batch["completion_mask"]
-                val_positions = val_batch["positions"]
+
+                def _v(key, _b=val_batch):
+                    return host_local_to_global(data_sharding, _b[key], local_rows)
+
+                val_x, val_y = _v("x"), _v("y")
+                val_segment_ids = _v("segment_ids")
+                val_completion_mask = _v("completion_mask")
+                val_positions = _v("positions")
                 with jax.set_mesh(cfg.mesh):
                     val_freqs = jitted_precompute_frequencies(val_positions, head_dim)
                 loss = val_step(
@@ -330,6 +467,15 @@ def main():
                 es_patience_counter = 0
             else:
                 es_patience_counter += 1
+
+            run.log(
+                {
+                    "val/loss": avg_val_loss,
+                    "val/best_loss": best_loss,
+                    "val/best_step": best_step,
+                },
+                step=step,
+            )
 
             if es_patience_counter > es_patience:
                 # fmt: off
@@ -359,6 +505,18 @@ def main():
     print(
         f"\nTotal time taken to train the model: {(train_end_time - train_start_time) / 60:.2f} minutes"
     )
+
+    # Leaderboard-shaped run summary (see train.py for the convention).
+    run.summary(
+        total_training_time=total_train_step_time,
+        total_training_flops=6 * num_params * total_tokens_consumed,
+        step=step,
+        best_val_loss=best_loss,
+        best_step=best_step,
+        total_tokens=total_tokens_consumed,
+        num_shards=num_shards_used,
+    )
+    run.finish()
 
 
 if __name__ == "__main__":

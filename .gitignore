@@ -135,6 +135,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Weights & Biases local run artifacts
+wandb/
+
 # Environments
 .env
 .envrc
@@ -206,3 +209,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# nanoGPT / TPU
+nanogpt/fineweb10B/
+_artifacts/
+*.bin
+
+# Rendered Mermaid output (.mmd sources are checked in)
+.claude/orchestration/diagrams/svg/
+.claude/orchestration/diagrams/png/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json

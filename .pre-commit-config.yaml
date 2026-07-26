@@ -1,4 +1,13 @@
 repos:
+  # Guard: never commit directly to protected branches. `main` is also protected
+  # server-side on GitHub (enforce_admins), so all changes land via pull request.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+        stages: [pre-commit]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.2
     hooks:

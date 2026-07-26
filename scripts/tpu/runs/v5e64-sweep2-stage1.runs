@@ -1,0 +1,16 @@
+# Sweep v2, Stage 1 — noise floor + LR plateau resolution (4 runs, 1000 steps).
+#
+# Seed 0 already exists on W&B: v5e64-lrsweep-020 (3.5952 @905) and
+# v5e64-lrsweep-028 (3.5983 @905). These four runs give n=3 seeds per LR.
+# NANOGPT_SEED varies the *init* PRNG only; data order is unchanged, so loss
+# curves should overlay early and diverge late.
+#
+# Output: sigma_seed = pooled std of best-val per LR arm. The 020-vs-028 gap
+# (0.0031 at seed 0) is judged against 2*sigma. Literature expectation
+# (Time-Transfer 2024: LR optimum moves ~2x on seed): they do NOT separate,
+# and 0.02 stands on nanochat horizon-matched provenance.
+
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=1 WANDB_RUN_NAME=v5e64-lrsweep-020-s1
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=2 WANDB_RUN_NAME=v5e64-lrsweep-020-s2
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=1 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_NAME=v5e64-lrsweep-028-s1
+TOTAL_TRAIN_STEPS=1000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=60 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=197e12 NANOGPT_SEED=2 NANOGPT_OTHER_PEAK_LR=0.028 WANDB_RUN_NAME=v5e64-lrsweep-028-s2

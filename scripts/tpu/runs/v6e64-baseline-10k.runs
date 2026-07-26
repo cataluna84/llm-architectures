@@ -1,0 +1,19 @@
+# Full pretraining baseline on v6e-64 (Trillium = 8 hosts x 8 chips = 64 chips).
+# CLOSEST match to the intended v5e-64 baseline: same 64-chip count, so
+# per-device 4 x 64 = 524288 tok/step at accum=1 (code derives it), and the
+# SAME NANOGPT_VAL_MAX_BATCHES=25 keeps the 6,400-row val subset. Only the chip
+# architecture differs, so the val-loss is directly comparable to the v5e-64
+# recipe; v6e is faster, so wall-clock/MFU improve.
+#
+# Topology deltas vs v5e64-baseline-10k.runs:
+#   NANOGPT_DEVICE_PEAK_FLOPS=918e12  (was 197e12) -> v6e Trillium bf16 peak,
+#                                       for a correct MFU number.
+#   COORDINATOR must start with EXPECT_WORKERS=8 (v6e-64 = 8 hosts, not 16).
+#   SAVE_CKPT_DIR set to the WINNING zone's in-region bucket at commit time
+#     (llm-architectures-eu for europe-west4-a, llm-architectures-us for us-east1-d).
+#   Runtime is v2-alpha-tpuv6e (handled by the launch profile, not here).
+#
+# Recipe (docs/sweeps/v5e64-2026-07/report.md): LR 0.02, momentum warmup
+# 0.85->0.95/300, emblr 0.3, unemb 0.002, cwd 0.2, clip 0.5, WSD-0.65.
+
+TOTAL_TRAIN_STEPS=10000 PER_DEVICE_BATCH_SIZE=4 DATA_SHARDS=100 NANOGPT_VAL_MAX_BATCHES=25 NANOGPT_DEVICE_PEAK_FLOPS=918e12 RUN_TIMEOUT_SECONDS=5400 NANOGPT_EMBEDDING_LR=0.3 NANOGPT_UNEMBEDDING_LR=0.002 NANOGPT_CAUTIOUS_WD=0.2 NANOGPT_GRAD_CLIP_NORM=0.5 NANOGPT_LR_SCHEDULE=wsd NANOGPT_WSD_WARMDOWN_FRAC=0.65 NANOGPT_RESUME_FROM_STEP=auto SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v6e64-baseline-10k WANDB_RUN_GROUP=sweep2-v5e64 WANDB_JOB_TYPE=baseline WANDB_RUN_NAME=v6e64-baseline-10k WANDB_RUN_ID=v6e64-baseline-10k-r1

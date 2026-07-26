@@ -1,22 +1,27 @@
 import os
-# Set some GPU FLAGS
-os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-os.environ["NCCL_NVLS_ENABLE"]="1"
-os.environ.update({
-  "NCCL_LL128_BUFFSIZE": "-2",
-  "NCCL_LL_BUFFSIZE": "-2",
-   "NCCL_PROTO": "SIMPLE,LL,LL128",
- })
-os.environ['XLA_FLAGS'] = (
-    '--xla_gpu_triton_gemm_any=True '
-    '--xla_gpu_enable_latency_hiding_scheduler=true '
-    '--xla_gpu_enable_pipelined_all_reduce=true '
-    '--xla_gpu_enable_pipelined_all_gather=true '
-    '--xla_gpu_enable_pipelined_reduce_scatter=true '
-    '--xla_gpu_enable_while_loop_double_buffering=true '
-    '--xla_gpu_enable_pipelined_p2p=true '
-    '--xla_gpu_collective_permute_decomposer_threshold=1024 '
-)
+
+# GPU-specific NCCL/XLA flags. Skipped on TPU (startup_script.sh sets
+# NANOGPT_TPU=1) since these --xla_gpu_* / NCCL knobs don't apply there.
+if os.environ.get("NANOGPT_TPU") != "1":
+    os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+    os.environ["NCCL_NVLS_ENABLE"] = "1"
+    os.environ.update(
+        {
+            "NCCL_LL128_BUFFSIZE": "-2",
+            "NCCL_LL_BUFFSIZE": "-2",
+            "NCCL_PROTO": "SIMPLE,LL,LL128",
+        }
+    )
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_triton_gemm_any=True "
+        "--xla_gpu_enable_latency_hiding_scheduler=true "
+        "--xla_gpu_enable_pipelined_all_reduce=true "
+        "--xla_gpu_enable_pipelined_all_gather=true "
+        "--xla_gpu_enable_pipelined_reduce_scatter=true "
+        "--xla_gpu_enable_while_loop_double_buffering=true "
+        "--xla_gpu_enable_pipelined_p2p=true "
+        "--xla_gpu_collective_permute_decomposer_threshold=1024 "
+    )
 import warnings
 import logging
 import time
@@ -24,13 +29,25 @@ from pathlib import Path
 from functools import partial
 
 import jax
+
 jax.config.update("jax_optimization_level", "O1")
+
+# Multi-host TPU slices (e.g. v5e-64: 8 hosts x 8 chips) need the distributed
+# runtime up BEFORE anything touches the backend — model.py queries
+# jax.default_backend() at import time below. Harmless on single-host TPU
+# (initializes a 1-process cluster).
+if os.environ.get("NANOGPT_TPU") == "1":
+    try:
+        jax.distributed.initialize()
+    except Exception as _exc:
+        print(f"[dist] jax.distributed.initialize() skipped: {_exc}")
 
 import optax
 import grain
 import numpy as np
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+from etils import epath
 from jax.sharding import Mesh
 from jax.sharding import set_mesh
 
@@ -41,6 +58,12 @@ from model import GPT, forward
 from utils import logical_to_sharding
 from optim import build_optimizer
 from config import ShardingRules, Config, BATCH_AXIS_NAME
+from wandb_logger import (
+    load_dotenv,
+    init_wandb,
+    device_peak_flops,
+    transformer_flops_per_token,
+)
 
 from fineweb_dataloader import make_grain_shard_loader, BOSFinder
 # from custom_loss import chunked_softmax_cross_entropy_with_integer_labels
@@ -84,7 +107,7 @@ def train_step_accum(
     grad_accum_steps,
 ):
     def body(carry, xy):
-        param, opt_state, lsum = carry
+        param, opt_state, lsum, gsum = carry
         xb, yb = xy
         loss, grad = jax.value_and_grad(compute_loss)(
             param, xb, yb, segment_ids, freqs, loss_mask
@@ -94,14 +117,20 @@ def train_step_accum(
         # every micro-step except the last, where it emits the real update.
         updates, new_opt_state = optim.update(grad, opt_state, param)
         new_param = optax.apply_updates(param, updates)
-        return (new_param, new_opt_state, lsum + loss), None
+        gnorm = optax.global_norm(grad)
+        return (new_param, new_opt_state, lsum + loss, gsum + gnorm), None
 
-    carry0 = (params, optim_state, jnp.array(0.0, dtype=jnp.result_type(0.0)))
-    (params, optim_state, lsum), _ = jax.lax.scan(
+    zero = jnp.array(0.0, dtype=jnp.result_type(0.0))
+    carry0 = (params, optim_state, zero, zero)
+    (params, optim_state, lsum, gsum), _ = jax.lax.scan(
         body, carry0, (x_batch, y_batch), length=grad_accum_steps
     )
     loss = lsum / grad_accum_steps
-    return params, loss, optim_state
+    # Mean of per-micro-batch pre-clip grad norms — a pathology signal (spikes,
+    # stalls, blow-ups), not the norm of the averaged gradient MultiSteps holds.
+    grad_norm = gsum / grad_accum_steps
+    param_norm = optax.global_norm(params)
+    return params, loss, optim_state, grad_norm, param_norm
 
 
 @partial(
@@ -115,9 +144,11 @@ def train_step(
     loss, grads = jax.value_and_grad(compute_loss)(
         params, x_batch, y_batch, segment_ids, freqs, loss_mask
     )
+    grad_norm = optax.global_norm(grads)
     updates, optim_state = optim.update(grads, optim_state, params)
     updated_params = optax.apply_updates(params, updates)
-    return updated_params, loss, optim_state
+    param_norm = optax.global_norm(updated_params)
+    return updated_params, loss, optim_state, grad_norm, param_norm
 
 
 @jax.jit
@@ -172,6 +203,20 @@ def get_next_batch(
         return x, y
 
 
+def host_local_to_global(sharding, buf, local_rows, batch_dim):
+    """Ship this host's row-slice of the global batch to its local devices.
+
+    Every process runs the identical data pipeline over the same files, so
+    `buf` holds the full global batch on every host; each host transfers only
+    its own block of `local_rows` along `batch_dim`. With a single process the
+    slice is the whole buffer, making this equivalent to the previous
+    jnp.asarray(buf, dtype=int32, device=sharding).
+    """
+    idx = (slice(None),) * batch_dim + (local_rows,)
+    local = np.ascontiguousarray(buf[idx], dtype=np.int32)
+    return jax.make_array_from_process_local_data(sharding, local, buf.shape)
+
+
 def model_run_name(cfg):
     return (
         f"{cfg.model.attn_type}"
@@ -186,8 +231,11 @@ def model_run_name(cfg):
     )
 
 
-
 def main():
+    # Seed os.environ from .env (WANDB_*, etc.) before building the config,
+    # which reads those values at construction time.
+    load_dotenv()
+
     # Get the mesh, sharding rules, amd the config
     devices = np.array(jax.devices())
     print("Number of devices found:", len(devices))
@@ -209,6 +257,12 @@ def main():
     per_device_bsz = cfg.hparams.per_device_batch_size
     bsz = per_device_bsz * len(devices)
     seqlen = cfg.model.seqlen
+    # Multi-host: jax.devices() orders devices by process, so this host owns
+    # the contiguous row block [process_index*local_bsz, ...) of every batch.
+    local_bsz = per_device_bsz * jax.local_device_count()
+    local_rows = slice(
+        jax.process_index() * local_bsz, (jax.process_index() + 1) * local_bsz
+    )
     head_dim = cfg.model.attn.head_dim
     data_sharding = logical_to_sharding(("batch",), cfg.mesh, cfg.rules)
     data_accum_sharding = logical_to_sharding((None, "batch", None), cfg.mesh, cfg.rules)  # fmt: off
@@ -217,40 +271,61 @@ def main():
     min_lr = 0.01 * max_lr
     warmup_steps = cfg.hparams.warmup_steps
     desired_batch_size = cfg.hparams.desired_batch_size
-    grad_accum_steps = max(2, desired_batch_size // (bsz * seqlen))
+    # accum=1 is a real configuration on large slices (v5e-64: 4 x 64 x 2048
+    # = desired_batch_size in a single micro-batch); the old max(2, ...) floor
+    # silently doubled tokens/step there, breaking the B_ref = 524,288 recipe.
+    grad_accum_steps = max(1, desired_batch_size // (bsz * seqlen))
     total_train_steps = cfg.hparams.total_train_steps
     max_checkpoints_to_keep = cfg.ckpt_cfg.max_checkpoints_to_keep
     checkpoint_save_steps = cfg.ckpt_cfg.checkpoint_save_steps
 
     # Load the model
     print("Building GPT model based on the config...")
-    model = GPT.init(jax.random.PRNGKey(0), cfg)
+    model = GPT.init(jax.random.PRNGKey(cfg.hparams.init_seed), cfg)
     print("Model built successfully!")
 
     # Optimizer
+    tx, lr_schedules = build_optimizer(
+        model,
+        d_model=cfg.model.d_emb,
+        other_peak_lr=cfg.hparams.other_peak_lr,
+        other_min_lr=min_lr,
+        total_train_steps=total_train_steps,
+        warmup_steps=warmup_steps,
+        b1=cfg.hparams.b1,
+        b2=cfg.hparams.b2,
+        embedding_lr=cfg.hparams.embedding_lr,
+        unembedding_lr=cfg.hparams.unembedding_lr,
+        weight_decay=cfg.hparams.weight_decay,
+        cautious_weight_decay=cfg.hparams.cautious_weight_decay,
+        muon_momentum_min=cfg.hparams.muon_momentum_min,
+        muon_momentum_max=cfg.hparams.muon_momentum_max,
+        muon_momentum_warmup_steps=cfg.hparams.muon_momentum_warmup_steps,
+        ns_steps=cfg.hparams.ns_steps,
+        mu_dtype=cfg.hparams.mu_dtype,
+        lr_schedule=cfg.hparams.lr_schedule,
+        wsd_warmdown_frac=cfg.hparams.wsd_warmdown_frac,
+    )
     optim = optax.chain(
         optax.clip_by_global_norm(cfg.hparams.grad_clip_norm),
-        build_optimizer(
-            model,
-            d_model=cfg.model.d_emb,
-            other_peak_lr=max_lr,
-            other_min_lr=min_lr,
-            total_train_steps=total_train_steps,
-            warmup_steps=warmup_steps,
-            b1=cfg.hparams.b1,
-            b2=cfg.hparams.b2,
-            embedding_lr=cfg.hparams.embedding_lr,
-            weight_decay=cfg.hparams.weight_decay,
-            cautious_weight_decay=cfg.hparams.cautious_weight_decay,
-        ),
+        tx,
     )
+    # Schedule for the main (Muon "other") param group — logged as train/lr.
+    lr_fn = lr_schedules["other"]
+
+    # Host-side mirror of the Muon momentum warmup (logged as train/muon_beta).
+    def muon_beta_fn(_step):
+        hp = cfg.hparams
+        if hp.muon_momentum_warmup_steps <= 0:
+            return hp.muon_momentum_max
+        frac = min(_step / hp.muon_momentum_warmup_steps, 1.0)
+        return (1.0 - frac) * hp.muon_momentum_min + frac * hp.muon_momentum_max
 
     if grad_accum_steps > 1:
         print("Using `MultiSteps` in optax for gradient accumulation...")
         optim = optax.MultiSteps(optim, every_k_schedule=grad_accum_steps)
 
     optim_state = optim.init(model)
-
 
     print("")
     print("-" * 75)
@@ -273,26 +348,86 @@ def main():
     print(line("Grad accumulation steps", grad_accum_steps))
     print()
     print(line("LR (min, max)", str((f"{min_lr:.6f}", f"{max_lr:.6f}"))))
+    print(line("Muon peak LR (other)", f"{cfg.hparams.other_peak_lr:.6f}"))
+    print(line("Muon momentum warmup steps", cfg.hparams.muon_momentum_warmup_steps))
     print(line("Warmup steps", cfg.hparams.warmup_steps))
     print(line("Weight decay", cfg.hparams.weight_decay), "\n")
     print("-" * 75)
 
+    num_params = count_params(model)
+    run = init_wandb(
+        cfg,
+        model_run_name(cfg),
+        {
+            "attn_type": cfg.model.attn_type,
+            "window_pattern": cfg.model.window_pattern,
+            "num_layers": cfg.model.num_layers,
+            "d_emb": cfg.model.d_emb,
+            "q_heads": cfg.model.q_heads,
+            "kv_heads": cfg.model.kv_heads,
+            "head_dim": head_dim,
+            "seqlen": seqlen,
+            "vocab_size": cfg.model.vocab_size,
+            "num_params": num_params,
+            "per_device_batch_size": per_device_bsz,
+            "total_batch_size": bsz,
+            "grad_accum_steps": grad_accum_steps,
+            "desired_batch_size": desired_batch_size,
+            "max_lr": max_lr,
+            "min_lr": min_lr,
+            "other_peak_lr": cfg.hparams.other_peak_lr,
+            "muon_momentum_min": cfg.hparams.muon_momentum_min,
+            "muon_momentum_max": cfg.hparams.muon_momentum_max,
+            "muon_momentum_warmup_steps": cfg.hparams.muon_momentum_warmup_steps,
+            "warmup_steps": warmup_steps,
+            "weight_decay": cfg.hparams.weight_decay,
+            # Sweep-v2 identity: every swept knob recorded so runs are
+            # self-describing on W&B without consulting the runs file.
+            "init_seed": cfg.hparams.init_seed,
+            "embedding_lr": cfg.hparams.embedding_lr,
+            "unembedding_lr": cfg.hparams.unembedding_lr,
+            "cautious_weight_decay": cfg.hparams.cautious_weight_decay,
+            "adam_b1": cfg.hparams.b1,
+            "adam_b2": cfg.hparams.b2,
+            "grad_clip_norm": cfg.hparams.grad_clip_norm,
+            "ns_steps": cfg.hparams.ns_steps,
+            "mu_dtype": cfg.hparams.mu_dtype or "float32",
+            "lr_schedule": cfg.hparams.lr_schedule,
+            "wsd_warmdown_frac": cfg.hparams.wsd_warmdown_frac,
+            "total_train_steps": total_train_steps,
+            "num_devices": len(devices),
+            "stage": "pretrain",
+        },
+    )
 
-    # Checkpointing
-    ckpt_path = Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
+    # Constants for MFU: FLOPs/token (dense + attention) and total device peak.
+    flops_per_token = transformer_flops_per_token(
+        num_params, cfg.model.num_layers, cfg.model.d_emb, seqlen
+    )
+    peak_flops_total = device_peak_flops() * len(devices)
+
+    # Checkpointing — only when a save dir is configured. Smoke/sweep runs set
+    # none, and orbax rejects the relative path that results at the first save
+    # ("Checkpoint path should be absolute"). epath (an orbax dep) instead of
+    # pathlib: pathlib collapses "gs://bucket" to "gs:/bucket", breaking GCS
+    # checkpoint dirs on TPU.
     options = ocp.CheckpointManagerOptions(
         max_to_keep=max_checkpoints_to_keep,
         save_interval_steps=checkpoint_save_steps,
         enable_async_checkpointing=True,
         enable_background_delete=True,
     )
-    handlers = {
-        "params": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
-        "optim_state": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
-        "ds": ocp.Checkpointer(grain.checkpoint.CheckpointHandler()),
-    }
-
-    mngr = ocp.CheckpointManager(ckpt_path, handlers, options=options)
+    if str(cfg.ckpt_cfg.save_ckpt_dir):
+        ckpt_path = epath.Path(cfg.ckpt_cfg.save_ckpt_dir) / model_run_name(cfg)
+        handlers = {
+            "params": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
+            "optim_state": ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
+            "ds": ocp.Checkpointer(grain.checkpoint.CheckpointHandler()),
+        }
+        mngr = ocp.CheckpointManager(ckpt_path, handlers, options=options)
+    else:
+        mngr = None
+        print("No save_ckpt_dir configured — checkpoint saving disabled.")
 
     # Compute the frequencies
     positions = jnp.arange(seqlen)[None, :]
@@ -305,19 +440,29 @@ def main():
     segment_ids = None
     resume_from_step = cfg.ckpt_cfg.last_checkpoint_step
 
+    if resume_from_step and mngr is None:
+        print("NANOGPT_RESUME_FROM_STEP set but no save_ckpt_dir — ignoring resume.")
+        resume_from_step = 0
+    if resume_from_step == "auto":
+        # Latest saved step per orbax's own listing (works on gs://); 0 = fresh.
+        resume_from_step = mngr.latest_step() or 0
+        print(f"Auto-resume: latest checkpoint step = {resume_from_step or 'none'}")
     if resume_from_step > 0:
-        resume_ckpt_path = os.path.join(
-            cfg.ckpt_cfg.save_ckpt_dir, str(resume_from_step)
-        )
-        if os.path.exists(resume_ckpt_path):
+        # Checkpoints live under ckpt_path (save_ckpt_dir / run_name), and
+        # epath.exists() works for both local and gs:// paths.
+        resume_ckpt_path = ckpt_path / str(resume_from_step)
+        if resume_ckpt_path.exists():
             from checkpoint_utils import load_checkpoint
 
             model, optim_state, train_iter = load_checkpoint(
                 mngr, resume_from_step, model, optim_state, mesh, train_iter
             )
+            print(f"Resumed from checkpoint at step {resume_from_step}")
         else:
             resume_from_step = 0
-            print(f"Checkpoint path {resume_ckpt_path} not found! Resuming training without restoring checkpoint...")
+            print(
+                f"Checkpoint path {resume_ckpt_path} not found! Resuming training without restoring checkpoint..."
+            )
 
     best_loss = float("inf")
     last_val_loss = float("inf")
@@ -326,6 +471,31 @@ def main():
     best_step = 0
     num_shards_used = 0
     total_tokens_consumed = 0
+    # Sum of per-step train times only (excludes validation/logging), i.e. the
+    # nanochat-leaderboard "total_training_time" convention.
+    total_train_step_time = 0.0
+    steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
+    # Per-step wall times for p50/p90/p99 summary stats; the first steps of a
+    # run are dropped at summary time (compile + cache warmup dominate them).
+    step_times: list[float] = []
+    # Pathology accounting: post-warmup upward loss jumps, and an early-abort
+    # for diverged configs (a dead run otherwise burns its full step budget;
+    # loss is computed on the replicated global batch, so every host reaches
+    # the same verdict and exits together). NANOGPT_DIVERGENCE_ABORT=0 opts out.
+    loss_spikes = 0
+    prev_loss: float | None = None
+    divergence_abort = os.environ.get("NANOGPT_DIVERGENCE_ABORT", "1") == "1"
+    hbm_stats_first: tuple | None = None
+
+    def hbm_stats():
+        try:
+            ms = jax.local_devices()[0].memory_stats()
+            peak, limit = ms.get("peak_bytes_in_use"), ms.get("bytes_limit")
+            if peak and limit:
+                return peak / 2**30, limit / 2**30, 100.0 * peak / limit
+        except Exception:
+            pass
+        return None
 
     simple_batch = np.zeros((bsz, seqlen + 1), dtype=np.uint16)
     grad_accum_batch = np.zeros((grad_accum_steps, bsz, seqlen + 1), dtype=np.uint16)
@@ -340,8 +510,9 @@ def main():
     # Training loop with explicit counter
     for shard in train_iter:
         if step >= total_train_steps or training_complete:
-            mngr.wait_until_finished()
-            print("Finished checkpointing! Cleaned.")
+            if mngr is not None:
+                mngr.wait_until_finished()
+                print("Finished checkpointing! Cleaned.")
             break
 
         tokens = shard["tokens"]
@@ -380,23 +551,23 @@ def main():
                                 transfer_to_device=False,
                             )
 
-                        stacked_batch = jnp.asarray(
-                            grad_accum_batch,
-                            dtype=jnp.int32,
-                            device=data_accum_sharding,
+                        stacked_batch = host_local_to_global(
+                            data_accum_sharding, grad_accum_batch, local_rows, 1
                         )
                         stacked_x = stacked_batch[:, :, :-1]
                         stacked_y = stacked_batch[:, :, 1:]
-                        model, loss, optim_state = train_step_accum(
-                            model,
-                            stacked_x,
-                            stacked_y,
-                            segment_ids,
-                            freqs,
-                            None,
-                            optim_state,
-                            optim,
-                            grad_accum_steps,
+                        model, loss, optim_state, grad_norm, param_norm = (
+                            train_step_accum(
+                                model,
+                                stacked_x,
+                                stacked_y,
+                                segment_ids,
+                                freqs,
+                                None,
+                                optim_state,
+                                optim,
+                                grad_accum_steps,
+                            )
                         )
                     else:
                         starts, ends = bf.next_batch(bsz, seqlen)
@@ -410,10 +581,10 @@ def main():
                             simple_batch,
                             transfer_to_device=False,
                         )
-                        stacked_batch = jnp.asarray(simple_batch, dtype=jnp.int32, device=data_sharding)  # fmt: off
+                        stacked_batch = host_local_to_global(data_sharding, simple_batch, local_rows, 0)  # fmt: off
                         stacked_x = stacked_batch[:, :-1]
                         stacked_y = stacked_batch[:, 1:]
-                        model, loss, optim_state = train_step(
+                        model, loss, optim_state, grad_norm, param_norm = train_step(
                             model,
                             stacked_x,
                             stacked_y,
@@ -431,14 +602,74 @@ def main():
                     train_time_elapsed = (end - train_start_time) / 60  # in minutes
                     tokens_processed = bsz * seqlen * grad_accum_steps
                     total_tokens_consumed += tokens_processed
+                    total_train_step_time += dt
+                    steps_this_run += 1
+                    step_times.append(dt)
+
+                    loss_f = float(loss)
+                    if (
+                        prev_loss is not None
+                        and step > warmup_steps
+                        and loss_f > prev_loss + 0.15
+                    ):
+                        loss_spikes += 1
+                    prev_loss = loss_f
+                    if steps_this_run == 1:
+                        hbm_stats_first = hbm_stats()
+                        if hbm_stats_first:
+                            print(
+                                f"HBM after first step: {hbm_stats_first[0]:.2f} / "
+                                f"{hbm_stats_first[1]:.2f} GiB "
+                                f"({hbm_stats_first[2]:.1f}%)"
+                            )
+                    if divergence_abort and step > 50 and not (loss_f <= 8.0):
+                        # `not (x <= 8.0)` is True for NaN as well as big/inf.
+                        print(
+                            f"DIVERGED at step {step}: loss={loss_f} "
+                            f"grad_norm={float(grad_norm):.3f} — aborting run early"
+                        )
+                        run.summary(
+                            diverged=True,
+                            diverged_at_step=step,
+                            best_val_loss=best_loss,
+                            loss_spikes=loss_spikes,
+                        )
+                        run.finish()
+                        raise SystemExit(0)
                     tokens_per_sec = int(tokens_processed / dt)
+                    # MFU = achieved FLOPs/s over device peak. ETA uses the
+                    # average step time so far (the compile-heavy first step
+                    # washes out within a handful of steps).
+                    mfu = flops_per_token * tokens_per_sec / peak_flops_total
+                    avg_step_time = total_train_step_time / steps_this_run
+                    eta_minutes = (
+                        max(total_train_steps - step - 1, 0) * avg_step_time / 60.0
+                    )  # noqa: E501
                     # fmt: off
-                    print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens processed/s: {tokens_per_sec:>9,}")
+                    print(f"Step: [{str(step).zfill(len(str(total_train_steps)))}/{total_train_steps}] | loss: {loss:8.4f} | Step time: {dt:5.2f} s | Train time: {train_time_elapsed:6.2f} min | Tokens/s: {tokens_per_sec:>9,} | MFU: {mfu * 100:4.1f}% | ETA: {eta_minutes:6.1f} min")
                     # fmt: on
+
+                    if (step % cfg.wandb.log_interval) == 0:
+                        run.log(
+                            {
+                                "train/loss": float(loss),
+                                "train/lr": float(lr_fn(step)),
+                                "train/muon_beta": muon_beta_fn(step),
+                                "train/grad_norm": float(grad_norm),
+                                "train/param_norm": float(param_norm),
+                                "perf/tokens_per_sec": tokens_per_sec,
+                                "perf/step_time_s": dt,
+                                "perf/mfu": mfu,
+                                "perf/total_tokens": total_tokens_consumed,
+                                "time/train_minutes": train_time_elapsed,
+                                "time/eta_minutes": eta_minutes,
+                            },
+                            step=step,
+                        )
 
                     step += 1
 
-                    if (step % options.save_interval_steps) == 0:
+                    if mngr is not None and (step % options.save_interval_steps) == 0:
                         mngr.save(
                             step,
                             args=ocp.args.Composite(
@@ -454,8 +685,9 @@ def main():
                         )
                         print(f"Total number of shards consumed : {num_shards_used}")
                         print(f"Best loss : {best_loss:.4f} at step {best_step}")
-                        mngr.wait_until_finished()
-                        print("Finished checkpointing! Cleaned.")
+                        if mngr is not None:
+                            mngr.wait_until_finished()
+                            print("Finished checkpointing! Cleaned.")
                         training_complete = True
                         break
 
@@ -471,6 +703,7 @@ def main():
                     print("\nScoring model performance on validation data...\n")
                     val_loss = 0.0
                     val_steps_count = 0
+                    val_cap = cfg.hparams.val_max_batches
                     val_iter = iter(val_dl)
                     for val_shard in val_iter:
                         val_tokens = val_shard["tokens"]
@@ -482,6 +715,15 @@ def main():
                             num_val_batches = val_bf.build(bsz, seqlen)
                             if num_val_batches <= 0:
                                 continue
+                            # Cap the pass (0 = full); the BOSFinder order is
+                            # deterministic, so capped passes score the same
+                            # subset every time and stay comparable.
+                            if val_cap > 0:
+                                num_val_batches = min(
+                                    num_val_batches, val_cap - val_steps_count
+                                )
+                                if num_val_batches <= 0:
+                                    continue
 
                             for _ in range(num_val_batches):
                                 starts, ends = val_bf.next_batch(bsz, seqlen)
@@ -495,7 +737,7 @@ def main():
                                     val_data_buf,
                                 )
 
-                                curr_val_data = jnp.asarray(val_data_buf, dtype=jnp.int32, device=data_sharding)  # fmt: off
+                                curr_val_data = host_local_to_global(data_sharding, val_data_buf, local_rows, 0)  # fmt: off
                                 x = curr_val_data[:, :-1]
                                 y = curr_val_data[:, 1:]
                                 loss = val_step(model, x, y, segment_ids, freqs, None)
@@ -513,13 +755,23 @@ def main():
                     else:
                         es_patience_counter += 1
 
+                    run.log(
+                        {
+                            "val/loss": avg_val_loss,
+                            "val/best_loss": best_loss,
+                            "val/best_step": best_step,
+                        },
+                        step=step,
+                    )
+
                     if es_patience_counter > es_patience:
                         # fmt: off
                         print(f"\nEarly stopping triggered! No improvement for {es_patience_counter} steps.")
                         print(f"Total number of shards consumed : {num_shards_used}")
                         print(f"Best loss                       : {best_loss:.4f} at step {best_step}")
                         # fmt: on
-                        mngr.wait_until_finished()
+                        if mngr is not None:
+                            mngr.wait_until_finished()
                         training_complete = True
                         break
 
@@ -531,6 +783,38 @@ def main():
             tokens.unlink_on_del()
     train_end_time = time.time()
     print(f"\nTotal time taken to train the model: {(train_end_time - train_start_time)/60:.2f} minutes")  # fmt: off
+
+    # Leaderboard-shaped run summary (nanochat "Time-to-GPT-2" convention).
+    # total_training_time is the train-only wall clock (excludes eval/logging);
+    # total_training_flops uses the standard 6*N*D (params * tokens) approximation.
+    # Full CORE / val_bpb require the tasks/ eval harness (out of scope here);
+    # best_val_loss (nats/token) is the in-loop quality proxy.
+    # Steady-state step-time percentiles: the mean hides exactly the tail
+    # stalls that throughput work targets. Skip the compile-heavy first steps.
+    steady = sorted(step_times[10:])
+
+    def pct(q: float) -> float:
+        return steady[min(len(steady) - 1, int(q * len(steady)))] if steady else 0.0
+
+    hbm_final = hbm_stats() or hbm_stats_first
+    run.summary(
+        total_training_time=total_train_step_time,
+        total_training_flops=6 * num_params * total_tokens_consumed,
+        step=step,
+        best_val_loss=best_loss,
+        best_step=best_step,
+        total_tokens=total_tokens_consumed,
+        num_shards=num_shards_used,
+        p50_step_time=pct(0.50),
+        p90_step_time=pct(0.90),
+        p99_step_time=pct(0.99),
+        loss_spikes=loss_spikes,
+        diverged=False,
+        hbm_peak_gib=hbm_final[0] if hbm_final else None,
+        hbm_limit_gib=hbm_final[1] if hbm_final else None,
+        hbm_util_pct=hbm_final[2] if hbm_final else None,
+    )
+    run.finish()
 
 
 if __name__ == "__main__":

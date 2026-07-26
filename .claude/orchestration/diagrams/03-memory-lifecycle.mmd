@@ -1,0 +1,52 @@
+---
+title: Memory lifecycle — ephemeral runtime data to durable knowledge
+---
+flowchart LR
+    subgraph EPH["Ephemeral (lost on reboot / cleanup)"]
+        TL["/tmp/train.log<br/>per worker"]
+        QL["/tmp/qr_watch.log"]
+        SL["/tmp/sweep_runner.log"]
+    end
+
+    subgraph AUTO["Automatic capture (hooks)"]
+        PTU["PostToolUse hook<br/>logs every edit/exec"]
+        STP["Stop hook<br/>runs VERIFY.md checks"]
+        PRC["PreCompact hook<br/>snapshots state"]
+    end
+
+    subgraph REPO["Durable, checked in"]
+        PG["PROGRESS.md<br/>append-only event log"]
+        PLN["PLAN.md<br/>current goal + checklist"]
+        MEM["memories.md<br/>decisions + gotchas"]
+        VER["VERIFY.md<br/>done-criteria"]
+        ORCH["orchestration/<br/>spec + playbook + baselines"]
+    end
+
+    subgraph EXT["External, permanent"]
+        WB["W&B runs<br/>metrics + summary"]
+        GCS["GCS checkpoints"]
+    end
+
+    TL --> WB
+    TL --> GCS
+    TL -->|"run outcome"| PG
+    QL -->|"preemption history"| PG
+    SL -->|"sweep results"| PG
+
+    PTU --> PG
+    STP --> VER
+    PRC --> PG
+
+    PG -->|"pattern seen 2+ times<br/>/remember"| MEM
+    PG -->|"goal changed<br/>/plan"| PLN
+    MEM -->|"operational rule"| ORCH
+    WB -->|"promoted numbers"| ORCH
+
+    MEM -->|"SessionStart injection"| NEXT["next Claude session<br/>starts informed"]
+    PLN --> NEXT
+    ORCH --> NEXT
+
+    classDef eph fill:#f8d7da,stroke:#721c24
+    classDef dur fill:#d4edda,stroke:#155724
+    class TL,QL,SL eph
+    class PG,PLN,MEM,VER,ORCH dur
