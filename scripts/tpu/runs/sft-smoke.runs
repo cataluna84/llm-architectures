@@ -1,0 +1,18 @@
+# SFT SMOKE (50 steps) — first-ever exercise of nanogpt/train_sft.py on a real
+# multi-host slice. Until d52fed9 this entrypoint crashed before step 1 with an
+# AttributeError (cfg.ckpt_cfg.resume_from_step does not exist), so NOTHING on
+# this path has ever been validated end to end: warm-start load, packed-parquet
+# loader, completion-only loss, checkpoint write. Gate the full run on this.
+#
+# Data must already be staged to NANOGPT_DATA_DIR on EVERY host — the loader
+# globs the LOCAL filesystem (make_grain_shard_loader -> Path(data_dir).glob),
+# so it cannot read gs:// directly. Stage with:
+#   gcloud storage rsync -r gs://llm-architectures-eu/nanogptjax/sft_data \
+#       /opt/llm-architectures/nanogpt/sft_data      (on all 8 workers)
+#
+# NOTE ON TOKENS/STEP: train_sft.py hardcodes grad_accum_steps=1, so this is
+# 4 x 2048 x 32 = 262,144 tokens/step — HALF the 524,288 pretraining invariant.
+# That invariant governs pretraining comparability only; SFT is a separate
+# stage and is not compared against the sweep runs.
+
+NANOGPT_ENTRYPOINT=nanogpt/train_sft.py NANOGPT_LOAD_PARAMS_CKPT_PATH=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-baseline-10k-clean/gqa_L16_D768_Q8_KV4_H96_T2048_V50304_L/10000/params NANOGPT_DATA_DIR=/opt/llm-architectures/nanogpt/sft_data TOTAL_TRAIN_STEPS=50 PER_DEVICE_BATCH_SIZE=4 NANOGPT_VAL_MAX_BATCHES=20 NANOGPT_DEVICE_PEAK_FLOPS=197e12 RUN_TIMEOUT_SECONDS=1800 SAVE_CKPT_DIR=gs://llm-architectures-eu/nanogptjax/checkpoints/v5e32-sft-smoke WANDB_RUN_GROUP=sft WANDB_JOB_TYPE=sft-smoke WANDB_RUN_NAME=v5e32-sft-smoke WANDB_RUN_ID=v5e32-sft-smoke
