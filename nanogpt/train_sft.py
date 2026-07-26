@@ -28,6 +28,16 @@ from functools import partial
 
 import jax
 
+# Multi-host TPU slices (v5e-32 = 8 hosts x 4 chips, v5e-64 = 16 x 4) need the
+# distributed runtime up BEFORE anything touches the backend — model.py queries
+# jax.default_backend() at import time below. Harmless on single host
+# (initializes a 1-process cluster). Mirrors train.py.
+if os.environ.get("NANOGPT_TPU") == "1":
+    try:
+        jax.distributed.initialize()
+    except Exception as _exc:
+        print(f"[dist] jax.distributed.initialize() skipped: {_exc}")
+
 jax.config.update("jax_optimization_level", "O1")
 
 import optax
@@ -58,6 +68,29 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*CheckpointMan
 jitted_precompute_frequencies = jax.jit(
     precompute_frequencies, static_argnames=("features", "theta", "dtype")
 )
+
+
+def host_local_to_global(sharding, buf, local_rows, batch_dim=0):
+    """Ship this host's row-slice of the global batch to its local devices.
+
+    Every process runs the identical data pipeline over the same shard list in
+    the same order, so `buf` holds the full global batch on every host; each
+    host transfers only its own block of `local_rows` along `batch_dim`.
+
+    Without this, a host-local array gets device_put against a sharding that
+    spans devices the process does not own. The collectives then never match,
+    every core parks in Vwait on a sync flag that never arrives, and libtpu
+    eventually kills the slice with SLICE_FAILURE_SW_INJECT_ERROR (signal 6,
+    exit 134). That killed a v5e-32 and reproduced identically on a fresh
+    v5e-64 on 2026-07-26 — it is a missing multi-host port, not bad hardware.
+
+    Unlike train.py's copy this does NOT force int32: completion_mask is bool
+    and optax's `where=` needs it to stay that way.
+    """
+    buf = np.asarray(buf)
+    idx = (slice(None),) * batch_dim + (local_rows,)
+    local = np.ascontiguousarray(buf[idx])
+    return jax.make_array_from_process_local_data(sharding, local, buf.shape)
 
 
 def compute_loss(params, x_batch, y_batch, segment_ids, freqs, loss_mask):
@@ -172,6 +205,12 @@ def main():
     seqlen = cfg.model.seqlen
     head_dim = cfg.model.attn.head_dim
     data_sharding = logical_to_sharding(("batch",), cfg.mesh, cfg.rules)
+    # Multi-host: jax.devices() orders devices by process, so this host owns the
+    # contiguous row block [process_index*local_bsz, ...) of every global batch.
+    local_bsz = per_device_bsz * jax.local_device_count()
+    local_rows = slice(
+        jax.process_index() * local_bsz, (jax.process_index() + 1) * local_bsz
+    )
     max_lr = cfg.hparams.max_lr
     min_lr = 0.01 * max_lr
     grad_accum_steps = 1
@@ -180,6 +219,9 @@ def main():
     checkpoint_save_steps = cfg.ckpt_cfg.checkpoint_save_steps
 
     tok_info = build_tokenizer()
+    # data_sharding=None below: the loader must yield HOST numpy batches. Letting
+    # grain device_put them against the global sharding is precisely what
+    # deadlocked the slice; host_local_to_global does the placement instead.
     train_dl = make_grain_shard_loader(
         data_dir=cfg.data_dir,
         split="train",
@@ -187,7 +229,7 @@ def main():
         batch_size=bsz,
         sequence_length=seqlen,
         grad_accum_steps=1,
-        data_sharding=data_sharding,
+        data_sharding=None,
         multi_threading=True,
     )
     train_iter = iter(train_dl)
@@ -202,7 +244,7 @@ def main():
         batch_size=bsz,
         sequence_length=seqlen,
         grad_accum_steps=1,
-        data_sharding=data_sharding,
+        data_sharding=None,
         cycle_length=1,
         multi_threading=False,
     )
@@ -327,10 +369,15 @@ def main():
         if training_complete:
             break
         start = time.time()
-        x, y = train_batch["x"], train_batch["y"]
-        segment_ids = train_batch["segment_ids"]
-        completion_mask = train_batch["completion_mask"]
-        positions = train_batch["positions"]
+
+        # Every host holds the full global batch; ship only our own rows.
+        def _g(key, _b=train_batch):
+            return host_local_to_global(data_sharding, _b[key], local_rows)
+
+        x, y = _g("x"), _g("y")
+        segment_ids = _g("segment_ids")
+        completion_mask = _g("completion_mask")
+        positions = _g("positions")
 
         with jax.set_mesh(cfg.mesh):
             freqs = jitted_precompute_frequencies(positions, head_dim)
@@ -386,10 +433,14 @@ def main():
             val_steps_count = 0
             val_iter = iter(val_dl)
             for val_batch in val_iter:
-                val_x, val_y = val_batch["x"], val_batch["y"]
-                val_segment_ids = val_batch["segment_ids"]
-                val_completion_mask = val_batch["completion_mask"]
-                val_positions = val_batch["positions"]
+
+                def _v(key, _b=val_batch):
+                    return host_local_to_global(data_sharding, _b[key], local_rows)
+
+                val_x, val_y = _v("x"), _v("y")
+                val_segment_ids = _v("segment_ids")
+                val_completion_mask = _v("completion_mask")
+                val_positions = _v("positions")
                 with jax.set_mesh(cfg.mesh):
                     val_freqs = jitted_precompute_frequencies(val_positions, head_dim)
                 loss = val_step(
