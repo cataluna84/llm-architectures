@@ -8,6 +8,10 @@ A personal research base for building scalable LLM architectures from scratch in
 > pure-JAX nanoGPT design and implementation goes to that project and its author; the original `LICENSE`
 > and `NOTICE` are preserved. See also the upstream links in [References](#references).
 
+> **📦 Trained weights:** [`cataluna84/nanogpt-jax-181m`](https://huggingface.co/cataluna84/nanogpt-jax-181m)
+> — 181M params, both the pretrained base (val **3.1271**) and the instruction-tuned
+> SFT checkpoint (val **1.4365**). Sampling runs on **CPU**; no accelerator required.
+
 ---
 
 ## nanoGPTJAX
@@ -252,6 +256,62 @@ generation behaviour shown above.
 Sweep methodology and the per-knob effect sizes behind this recipe:
 [`docs/training.md`](docs/training.md) and
 [`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md).
+
+## Project status
+
+The full pipeline has been run end to end on Google TRC TPU and is **complete**:
+sweep → pretraining → base evals → SFT → post-SFT evals. The TPU grant ended
+2026-07-26, and **all TPU and GCS resources for this project have been released**.
+
+| Stage | Result |
+| --- | --- |
+| Sweep v2 (43 runs, v5e-64) | composed recipe, −18σ vs baseline |
+| Pretraining 10k, v5e-32 | val **3.1271** · 25.1% MFU · 1.14M tok/s · 5.24B tokens |
+| Base evals (200 ex/task) | MMLU .230 · ARC-e .245 · ARC-c .285 · GSM8K .000 |
+| SFT 1 epoch, v5e-64 | val **1.4365** · 26.5% MFU · 2.41M tok/s · 442M tokens |
+| Post-SFT evals | MMLU .210 · ARC-e .200 · ARC-c .260 · GSM8K .000 |
+
+Both models sit **at chance** on the multiple-choice benchmarks and every
+post-SFT delta is inside noise (SE ±0.031 at n=200). That is the expected
+outcome at 181M params on 5.24B tokens — SFT teaches format and turn-taking,
+which accuracy benchmarks do not measure. What did move is the loss
+(val 1.596 → 1.4365) and the generation behaviour shown in
+[Midtrain/SFT](#midtrainsft) above.
+
+### What is preserved
+
+| Artifact | Where |
+| --- | --- |
+| Base + SFT weights | [HF `cataluna84/nanogpt-jax-181m`](https://huggingface.co/cataluna84/nanogpt-jax-181m) |
+| All metrics and curves | [W&B `cataluna84/llm-architectures`](https://wandb.ai/cataluna84/llm-architectures) |
+| Methodology and effect sizes | [`docs/training.md`](docs/training.md), [`docs/sweeps/v5e64-2026-07/report.md`](docs/sweeps/v5e64-2026-07/report.md) |
+
+Optimizer and dataloader state were **not** published, so training can be
+restarted from the released params but not resumed mid-run. The SFT parquet is
+regenerable in a few minutes via `nanogpt/sft_dataloader.py`.
+
+### Sampling the released model (no TPU needed)
+
+```bash
+uv sync
+huggingface-cli download cataluna84/nanogpt-jax-181m --local-dir ./ckpts
+
+# instruction-tuned: chat-formatted, stops on <|assistant_end|>
+NANOGPT_MODEL_TYPE=SFT \
+NANOGPT_LOAD_PARAMS_CKPT_PATH=./ckpts/sft/params \
+python nanogpt/inference.py
+
+# base: raw continuation
+NANOGPT_MODEL_TYPE=pretrained \
+NANOGPT_LOAD_PARAMS_CKPT_PATH=./ckpts/base/params \
+python nanogpt/inference.py
+```
+
+Checkpoints are **Orbax** directories, not `transformers` weights — load them
+with this repo's code, not `AutoModel`. Reproducing the training runs requires
+your own accelerator and a FineWeb10B download; the TPU launch scripts under
+`scripts/tpu/` are preserved and documented but are no longer pointed at a live
+grant.
 
 ## Contributing
 
