@@ -123,6 +123,12 @@ cd "$REPO_DIR"
 # coordinator reads NTFY_TOPIC. Never echoed — this is a credential.
 if [ -f "$REPO_DIR/.env" ]; then
     _hf_token="$(grep -m1 '^HF_TOKEN=' "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+    # Strip surrounding quotes. HF_TOKEN is the one quoted value in .env, and a
+    # token exported WITH its quotes is rejected — huggingface_hub then falls
+    # back to anonymous and only warns, so this failed silently the first time
+    # (2026-07-26). Python's load_dotenv already strips quotes; bash must too.
+    _hf_token="${_hf_token%\"}"; _hf_token="${_hf_token#\"}"
+    _hf_token="${_hf_token%\'}"; _hf_token="${_hf_token#\'}"
     if [ -n "$_hf_token" ]; then
         export HF_TOKEN="$_hf_token"
         export HUGGING_FACE_HUB_TOKEN="$_hf_token"

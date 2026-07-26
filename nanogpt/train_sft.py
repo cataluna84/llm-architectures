@@ -310,7 +310,14 @@ def main():
     total_train_step_time = 0.0
     steps_this_run = 0  # completed optimizer steps this process (for avg/ETA)
 
-    step = cfg.ckpt_cfg.resume_from_step
+    # SFT always starts at step 0. It warm-starts from load_params_ckpt_path
+    # (params only, above) and never restores optimizer state — there is no
+    # mngr.restore on this path — so a mid-run resume would silently continue
+    # with a fresh optimizer, which is worse than redoing the work. A preempted
+    # SFT run simply reruns from the pretrained params.
+    # (`cfg.ckpt_cfg.last_checkpoint_step` / NANOGPT_RESUME_FROM_STEP drives
+    # pretraining resume only, and may be the string "auto", not a step index.)
+    step = 0
     print("Starting training (the first step will take some time for compilation...)\n")
 
     training_complete = False
