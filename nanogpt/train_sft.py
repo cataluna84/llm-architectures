@@ -1,26 +1,34 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# Set some GPU FLAGS
 
-os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-os.environ["NCCL_NVLS_ENABLE"] = "1"
-os.environ.update(
-    {
-        "NCCL_LL128_BUFFSIZE": "-2",
-        "NCCL_LL_BUFFSIZE": "-2",
-        "NCCL_PROTO": "SIMPLE,LL,LL128",
-    }
-)
-os.environ["XLA_FLAGS"] = (
-    "--xla_gpu_triton_gemm_any=True "
-    "--xla_gpu_enable_latency_hiding_scheduler=true "
-    "--xla_gpu_enable_pipelined_all_reduce=true "
-    "--xla_gpu_enable_pipelined_all_gather=true "
-    "--xla_gpu_enable_pipelined_reduce_scatter=true "
-    "--xla_gpu_enable_while_loop_double_buffering=true "
-    "--xla_gpu_enable_pipelined_p2p=true "
-    "--xla_gpu_collective_permute_decomposer_threshold=1024 "
-)
+# GPU-specific NCCL/XLA flags. Skipped on TPU (startup_script.sh sets
+# NANOGPT_TPU=1) since these --xla_gpu_* / NCCL knobs don't apply there.
+# This guard mirrors train.py and is load-bearing: exporting GPU XLA_FLAGS on a
+# TPU host made JAX bring up a CPU backend alongside the TPU one, and with
+# jax.distributed initialized that CPU backend does a cross-process topology
+# exchange which nothing else joins — every host then died with
+#   INTERNAL: Getting local topologies failed:
+#   GetKeyValue() timed out with key: cpu:local_topology/cpu/N ... duration: 2m
+# followed by a Shutdown barrier timeout and exit 134 (2026-07-26).
+if os.environ.get("NANOGPT_TPU") != "1":
+    os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+    os.environ["NCCL_NVLS_ENABLE"] = "1"
+    os.environ.update(
+        {
+            "NCCL_LL128_BUFFSIZE": "-2",
+            "NCCL_LL_BUFFSIZE": "-2",
+            "NCCL_PROTO": "SIMPLE,LL,LL128",
+        }
+    )
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_triton_gemm_any=True "
+        "--xla_gpu_enable_latency_hiding_scheduler=true "
+        "--xla_gpu_enable_pipelined_all_reduce=true "
+        "--xla_gpu_enable_pipelined_all_gather=true "
+        "--xla_gpu_enable_pipelined_reduce_scatter=true "
+        "--xla_gpu_enable_while_loop_double_buffering=true "
+        "--xla_gpu_enable_pipelined_p2p=true "
+        "--xla_gpu_collective_permute_decomposer_threshold=1024 "
+    )
 import warnings
 import logging
 import time
